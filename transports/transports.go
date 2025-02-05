@@ -41,6 +41,7 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/obfs2"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/obfs3"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/obfs4"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/scramblesuit"
 )
 
@@ -92,6 +93,7 @@ func Init() error {
 		new(obfs2.Transport),
 		new(obfs3.Transport),
 		new(obfs4.Transport),
+		new(pq_obfs.Transport),
 		new(scramblesuit.Transport),
 		new(snowflake.Transport),
 		webtunnel.Transport,
