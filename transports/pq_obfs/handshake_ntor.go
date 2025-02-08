@@ -134,6 +134,8 @@ func newClientHandshake(nodeID *ntor.NodeID, serverIdentity *ntor.PublicKey, ses
 }
 
 func (hs *clientHandshake) generateHandshake() ([]byte, error) {
+	// TODO this generates the first client message!
+
 	var buf bytes.Buffer
 
 	hs.mac.Reset()
@@ -170,6 +172,8 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 }
 
 func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error) {
+	// TODO this verifies the final server message!
+
 	// No point in examining the data unless the miminum plausible response has
 	// been received.
 	if serverMinHandshakeLength > len(resp) {
@@ -249,6 +253,8 @@ func newServerHandshake(nodeID *ntor.NodeID, serverIdentity *ntor.Keypair, sessi
 }
 
 func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilter, resp []byte) ([]byte, error) {
+	// TODO this receives a client message and parses it!
+
 	// No point in examining the data unless the miminum plausible response has
 	// been received.
 	if clientMinHandshakeLength > len(resp) {
@@ -326,6 +332,8 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 }
 
 func (hs *serverHandshake) generateHandshake() ([]byte, error) {
+	// TODO this uses a parsed client message to send a response!
+
 	var buf bytes.Buffer
 
 	hs.mac.Reset()

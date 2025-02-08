@@ -155,6 +155,8 @@ func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 	var nodeID *ntor.NodeID
 	var publicKey *ntor.PublicKey
 
+	// TODO this receives B, NodeID!
+
 	// The "new" (version >= 0.0.3) bridge lines use a unified "cert" argument
 	// for the Node ID and Public Key.
 	certStr, ok := args.Get(certArg)
@@ -195,6 +197,8 @@ func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 		return nil, fmt.Errorf("invalid iat-mode '%d'", iatMode)
 	}
 
+	// TODO this generates session keys!
+
 	// Generate the session key pair before connectiong to hide the Elligator2
 	// rejection sampling from network observers.
 	sessionKey, err := ntor.NewKeypair(true)
@@ -206,6 +210,9 @@ func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 }
 
 func (cf *pq_obfsClientFactory) Dial(network, addr string, dialFn base.DialFunc, args interface{}) (net.Conn, error) {
+
+	// TODO args are passed back into Dial here! dialFn is direct or uses some regular Proxy server
+
 	// Validate args before bothering to open connection.
 	ca, ok := args.(*pq_obfsClientArgs)
 	if !ok {
@@ -298,6 +305,8 @@ type pq_obfsConn struct {
 }
 
 func newPq_obfsClientConn(conn net.Conn, args *pq_obfsClientArgs) (c *pq_obfsConn, err error) {
+	// TODO this sets up a message length distribution!
+
 	// Generate the initial protocol polymorphism distribution(s).
 	var seed *drbg.Seed
 	if seed, err = drbg.NewSeed(); err != nil {
@@ -339,6 +348,8 @@ func (conn *pq_obfsConn) clientHandshake(nodeID *ntor.NodeID, peerIdentityKey *n
 	if conn.isServer {
 		return fmt.Errorf("clientHandshake called on server connection")
 	}
+
+	// TODO this sends the first client message!
 
 	// Generate and send the client handshake.
 	hs := newClientHandshake(nodeID, peerIdentityKey, sessionKey)

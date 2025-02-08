@@ -196,6 +196,7 @@ func jsonServerStateFromFile(stateDir string, js *jsonServerState) error {
 
 func newJSONServerState(stateDir string, js *jsonServerState) (err error) {
 	// Generate everything a server needs, using the cryptographic PRNG.
+	// TODO this generates the initial identity!
 	var st pq_obfsServerState
 	rawID := make([]byte, ntor.NodeIDLength)
 	if err = csrand.Bytes(rawID); err != nil {
