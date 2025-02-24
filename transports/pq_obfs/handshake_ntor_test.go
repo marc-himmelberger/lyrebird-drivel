@@ -33,20 +33,21 @@ import (
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/ntor"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/okems"
 )
 
 func TestHandshakeNtorClient(t *testing.T) {
 	// Generate the server node id and id keypair, and ephemeral session keys.
 	nodeID, _ := ntor.NewNodeID([]byte("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13"))
-	idKeypair, _ := ntor.NewKeypair(false)
+	idKeypair, _ := okems.NewKeypair()
 	serverFilter, _ := replayfilter.New(replayTTL)
-	clientKeypair, err := ntor.NewKeypair(true)
+	clientKeypair, err := okems.NewKeypair()
 	if err != nil {
-		t.Fatalf("client: ntor.NewKeypair failed: %s", err)
+		t.Fatalf("client: okems.NewKeypair failed: %s", err)
 	}
-	serverKeypair, err := ntor.NewKeypair(true)
+	serverKeypair, err := okems.NewKeypair()
 	if err != nil {
-		t.Fatalf("server: ntor.NewKeypair failed: %s", err)
+		t.Fatalf("server: okems.NewKeypair failed: %s", err)
 	}
 
 	// Test client handshake padding.
@@ -134,15 +135,15 @@ func TestHandshakeNtorClient(t *testing.T) {
 func TestHandshakeNtorServer(t *testing.T) {
 	// Generate the server node id and id keypair, and ephemeral session keys.
 	nodeID, _ := ntor.NewNodeID([]byte("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13"))
-	idKeypair, _ := ntor.NewKeypair(false)
+	idKeypair, _ := okems.NewKeypair()
 	serverFilter, _ := replayfilter.New(replayTTL)
-	clientKeypair, err := ntor.NewKeypair(true)
+	clientKeypair, err := okems.NewKeypair()
 	if err != nil {
-		t.Fatalf("client: ntor.NewKeypair failed: %s", err)
+		t.Fatalf("client: okems.NewKeypair failed: %s", err)
 	}
-	serverKeypair, err := ntor.NewKeypair(true)
+	serverKeypair, err := okems.NewKeypair()
 	if err != nil {
-		t.Fatalf("server: ntor.NewKeypair failed: %s", err)
+		t.Fatalf("server: okems.NewKeypair failed: %s", err)
 	}
 
 	// Test server handshake padding.

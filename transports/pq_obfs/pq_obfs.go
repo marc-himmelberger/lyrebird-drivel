@@ -47,6 +47,7 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/ntor"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/probdist"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/base"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/framing"
 )
@@ -85,8 +86,8 @@ var biasedDist bool
 
 type pq_obfsClientArgs struct {
 	nodeID     *ntor.NodeID
-	publicKey  *ntor.PublicKey
-	sessionKey *ntor.Keypair
+	publicKey  *okems.PublicKey
+	sessionKey *okems.Keypair
 	iatMode    int
 }
 
@@ -153,7 +154,7 @@ func (cf *pq_obfsClientFactory) Transport() base.Transport {
 
 func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 	var nodeID *ntor.NodeID
-	var publicKey *ntor.PublicKey
+	var publicKey *okems.PublicKey
 
 	// TODO this receives B, NodeID!
 
@@ -182,7 +183,7 @@ func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 		if !ok {
 			return nil, fmt.Errorf("missing argument '%s'", publicKeyArg)
 		}
-		if publicKey, err = ntor.PublicKeyFromHex(publicKeyStr); err != nil {
+		if publicKey, err = okems.PublicKeyFromHex(publicKeyStr); err != nil {
 			return nil, err
 		}
 	}
@@ -201,7 +202,7 @@ func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 
 	// Generate the session key pair before connectiong to hide the Elligator2
 	// rejection sampling from network observers.
-	sessionKey, err := ntor.NewKeypair(true)
+	sessionKey, err := okems.NewKeypair()
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +239,7 @@ type pq_obfsServerFactory struct {
 	args      *pt.Args
 
 	nodeID       *ntor.NodeID
-	identityKey  *ntor.Keypair
+	identityKey  *okems.Keypair
 	lenSeed      *drbg.Seed
 	iatSeed      *drbg.Seed
 	iatMode      int
@@ -264,7 +265,7 @@ func (sf *pq_obfsServerFactory) WrapConn(conn net.Conn) (net.Conn, error) {
 	// might be futile, but the timing differential isn't very large on modern
 	// hardware, and there are far easier statistical attacks that can be
 	// mounted as a distinguisher.
-	sessionKey, err := ntor.NewKeypair(true)
+	sessionKey, err := okems.NewKeypair()
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +345,7 @@ func newPq_obfsClientConn(conn net.Conn, args *pq_obfsClientArgs) (c *pq_obfsCon
 	return
 }
 
-func (conn *pq_obfsConn) clientHandshake(nodeID *ntor.NodeID, peerIdentityKey *ntor.PublicKey, sessionKey *ntor.Keypair) error {
+func (conn *pq_obfsConn) clientHandshake(nodeID *ntor.NodeID, peerIdentityKey *okems.PublicKey, sessionKey *okems.Keypair) error {
 	if conn.isServer {
 		return fmt.Errorf("clientHandshake called on server connection")
 	}
@@ -389,7 +390,7 @@ func (conn *pq_obfsConn) clientHandshake(nodeID *ntor.NodeID, peerIdentityKey *n
 	}
 }
 
-func (conn *pq_obfsConn) serverHandshake(sf *pq_obfsServerFactory, sessionKey *ntor.Keypair) error {
+func (conn *pq_obfsConn) serverHandshake(sf *pq_obfsServerFactory, sessionKey *okems.Keypair) error {
 	if !conn.isServer {
 		return fmt.Errorf("serverHandshake called on client connection")
 	}

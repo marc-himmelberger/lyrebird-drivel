@@ -41,6 +41,7 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/drbg"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/ntor"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/okems"
 )
 
 const (
@@ -67,13 +68,13 @@ func (cert *pq_obfsServerCert) String() string {
 	return strings.TrimSuffix(base64.StdEncoding.EncodeToString(cert.raw), certSuffix)
 }
 
-func (cert *pq_obfsServerCert) unpack() (*ntor.NodeID, *ntor.PublicKey) {
+func (cert *pq_obfsServerCert) unpack() (*ntor.NodeID, *okems.PublicKey) {
 	if len(cert.raw) != certLength {
 		panic(fmt.Sprintf("cert length %d is invalid", len(cert.raw)))
 	}
 
 	nodeID, _ := ntor.NewNodeID(cert.raw[:ntor.NodeIDLength])
-	pubKey, _ := ntor.NewPublicKey(cert.raw[ntor.NodeIDLength:])
+	pubKey, _ := okems.NewPublicKey(cert.raw[ntor.NodeIDLength:])
 
 	return nodeID, pubKey
 }
@@ -93,13 +94,13 @@ func serverCertFromString(encoded string) (*pq_obfsServerCert, error) {
 
 func serverCertFromState(st *pq_obfsServerState) *pq_obfsServerCert {
 	cert := new(pq_obfsServerCert)
-	cert.raw = append(st.nodeID.Bytes()[:], st.identityKey.Public().Bytes()[:]...)
+	cert.raw = append(st.nodeID.Bytes()[:], st.identityKey.Public().Bytes()...)
 	return cert
 }
 
 type pq_obfsServerState struct {
 	nodeID      *ntor.NodeID
-	identityKey *ntor.Keypair
+	identityKey *okems.Keypair
 	drbgSeed    *drbg.Seed
 	iatMode     int
 
@@ -154,7 +155,7 @@ func serverStateFromJSONServerState(stateDir string, js *jsonServerState) (*pq_o
 	if st.nodeID, err = ntor.NodeIDFromHex(js.NodeID); err != nil {
 		return nil, err
 	}
-	if st.identityKey, err = ntor.KeypairFromHex(js.PrivateKey); err != nil {
+	if st.identityKey, err = okems.KeypairFromHex(js.PrivateKey, js.PublicKey); err != nil {
 		return nil, err
 	}
 	if st.drbgSeed, err = drbg.SeedFromHex(js.DrbgSeed); err != nil {
@@ -205,7 +206,7 @@ func newJSONServerState(stateDir string, js *jsonServerState) (err error) {
 	if st.nodeID, err = ntor.NewNodeID(rawID); err != nil {
 		return
 	}
-	if st.identityKey, err = ntor.NewKeypair(false); err != nil {
+	if st.identityKey, err = okems.NewKeypair(); err != nil {
 		return
 	}
 	if st.drbgSeed, err = drbg.NewSeed(); err != nil {

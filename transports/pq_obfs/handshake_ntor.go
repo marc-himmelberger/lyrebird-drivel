@@ -41,6 +41,7 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/ntor"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/framing"
 )
 
@@ -109,9 +110,9 @@ func (e *InvalidAuthError) Error() string {
 }
 
 type clientHandshake struct {
-	keypair        *ntor.Keypair
+	keypair        *okems.Keypair
 	nodeID         *ntor.NodeID
-	serverIdentity *ntor.PublicKey
+	serverIdentity *okems.PublicKey
 	epochHour      []byte
 
 	padLen int
@@ -122,7 +123,7 @@ type clientHandshake struct {
 	serverMark           []byte
 }
 
-func newClientHandshake(nodeID *ntor.NodeID, serverIdentity *ntor.PublicKey, sessionKey *ntor.Keypair) *clientHandshake {
+func newClientHandshake(nodeID *ntor.NodeID, serverIdentity *okems.PublicKey, sessionKey *okems.Keypair) *clientHandshake {
 	hs := new(clientHandshake)
 	hs.keypair = sessionKey
 	hs.nodeID = nodeID
@@ -139,7 +140,7 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 	var buf bytes.Buffer
 
 	hs.mac.Reset()
-	_, _ = hs.mac.Write(hs.keypair.Representative().Bytes()[:])
+	_, _ = hs.mac.Write(hs.keypair.Public().Bytes())
 	mark := hs.mac.Sum(nil)[:markLength]
 
 	// The client handshake is X | P_C | M_C | MAC(X | P_C | M_C | E) where:
@@ -157,7 +158,7 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 	}
 
 	// Write X, P_C, M_C.
-	buf.Write(hs.keypair.Representative().Bytes()[:])
+	buf.Write(hs.keypair.Public().Bytes())
 	buf.Write(pad)
 	buf.Write(mark)
 
@@ -228,9 +229,9 @@ func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error
 }
 
 type serverHandshake struct {
-	keypair        *ntor.Keypair
+	keypair        *okems.Keypair
 	nodeID         *ntor.NodeID
-	serverIdentity *ntor.Keypair
+	serverIdentity *okems.Keypair
 	epochHour      []byte
 	serverAuth     *ntor.Auth
 
@@ -241,13 +242,13 @@ type serverHandshake struct {
 	clientMark           []byte
 }
 
-func newServerHandshake(nodeID *ntor.NodeID, serverIdentity *ntor.Keypair, sessionKey *ntor.Keypair) *serverHandshake {
+func newServerHandshake(nodeID *ntor.NodeID, serverIdentity *okems.Keypair, sessionKey *okems.Keypair) *serverHandshake {
 	hs := new(serverHandshake)
 	hs.keypair = sessionKey
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity
 	hs.padLen = csrand.IntRange(serverMinPadLength, serverMaxPadLength)
-	hs.mac = hmac.New(sha256.New, append(hs.serverIdentity.Public().Bytes()[:], hs.nodeID.Bytes()[:]...))
+	hs.mac = hmac.New(sha256.New, append(hs.serverIdentity.Public().Bytes(), hs.nodeID.Bytes()[:]...))
 
 	return hs
 }
@@ -337,7 +338,7 @@ func (hs *serverHandshake) generateHandshake() ([]byte, error) {
 	var buf bytes.Buffer
 
 	hs.mac.Reset()
-	_, _ = hs.mac.Write(hs.keypair.Representative().Bytes()[:])
+	_, _ = hs.mac.Write(hs.keypair.Public().Bytes())
 	mark := hs.mac.Sum(nil)[:markLength]
 
 	// The server handshake is Y | AUTH | P_S | M_S | MAC(Y | AUTH | P_S | M_S | E) where:
@@ -356,7 +357,7 @@ func (hs *serverHandshake) generateHandshake() ([]byte, error) {
 	}
 
 	// Write Y, AUTH, P_S, M_S.
-	buf.Write(hs.keypair.Representative().Bytes()[:])
+	buf.Write(hs.keypair.Public().Bytes())
 	buf.Write(hs.serverAuth.Bytes()[:])
 	buf.Write(pad)
 	buf.Write(mark)
