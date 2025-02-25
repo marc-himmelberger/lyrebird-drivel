@@ -303,7 +303,7 @@ func Decaps(private *PrivateKey, obfCiphertext []byte) (sharedSecret []byte, err
 		// ciphertext is an obfuscated public key
 		sharedSecret, err = x25519ell2.OkemDecaps(private.kemPrivateKey, obfCiphertext)
 		if err != nil {
-			return nil, err
+			return sharedSecret, err
 		} else {
 			return sharedSecret, nil
 		}
@@ -319,7 +319,7 @@ func Decaps(private *PrivateKey, obfCiphertext []byte) (sharedSecret []byte, err
 		// Do KeyGen of KEM
 		sharedSecret, err = kem.DecapSecret(kemCiphertext)
 		if err != nil {
-			return nil, err
+			return sharedSecret, err
 		}
 
 		return sharedSecret, nil

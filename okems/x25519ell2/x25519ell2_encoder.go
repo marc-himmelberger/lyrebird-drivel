@@ -167,7 +167,7 @@ func OkemEncaps(kemPublicKey []byte) ([]byte, []byte, error) {
 	curve25519.ScalarMult(&sharedSecretArr, &privateBuf, pkArr)
 	notOk := constantTimeIsZero(sharedSecretArr[:])
 	if notOk != 0 {
-		return nil, nil, errors.New("x25519 KEM's EncapSecret failed")
+		return obfPublicBuf[:], sharedSecretArr[:], errors.New("x25519 KEM's EncapSecret failed")
 	}
 
 	return obfPublicBuf[:], sharedSecretArr[:], nil
@@ -192,7 +192,7 @@ func OkemDecaps(kemPrivateKey []byte, obfPublicKey []byte) (sharedSecret []byte,
 	curve25519.ScalarMult(&sharedSecretArr, privArr, &publicBuf)
 	notOk := constantTimeIsZero(sharedSecretArr[:])
 	if notOk != 0 {
-		return nil, errors.New("x25519 KEM's DecapSecret failed")
+		return sharedSecretArr[:], errors.New("x25519 KEM's DecapSecret failed")
 	}
 
 	return sharedSecretArr[:], nil
