@@ -39,9 +39,9 @@ import (
 	"time"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/ntor"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/okems"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/drivelcrypto"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/framing"
 )
 
@@ -51,12 +51,12 @@ const (
 	clientMinPadLength = (serverMinHandshakeLength + inlineSeedFrameLength) -
 		clientMinHandshakeLength
 	clientMaxPadLength       = maxHandshakeLength - clientMinHandshakeLength
-	clientMinHandshakeLength = ntor.RepresentativeLength + markLength + macLength
+	clientMinHandshakeLength = drivelcrypto.RepresentativeLength + markLength + macLength
 
 	serverMinPadLength = 0
 	serverMaxPadLength = maxHandshakeLength - (serverMinHandshakeLength +
 		inlineSeedFrameLength)
-	serverMinHandshakeLength = ntor.RepresentativeLength + ntor.AuthLength +
+	serverMinHandshakeLength = drivelcrypto.RepresentativeLength + drivelcrypto.AuthLength +
 		markLength + macLength
 
 	markLength = sha256.Size / 2
@@ -80,9 +80,9 @@ var ErrInvalidHandshake = errors.New("handshake: Failed to find M_[C,S]")
 // dropped.
 var ErrReplayedHandshake = errors.New("handshake: Replay detected")
 
-// ErrNtorFailed is the error returned when the ntor handshake fails.  This
+// ErrdrivelcryptoFailed is the error returned when the drivelcrypto handshake fails.  This
 // error is fatal and the connection MUST be dropped.
-var ErrNtorFailed = errors.New("handshake: ntor handshake failure")
+var ErrdrivelcryptoFailed = errors.New("handshake: drivelcrypto handshake failure")
 
 // InvalidMacError is the error returned when the handshake MACs do not match.
 // This error is fatal and the connection MUST be dropped.
@@ -96,34 +96,34 @@ func (e *InvalidMacError) Error() string {
 		hex.EncodeToString(e.Derived), hex.EncodeToString(e.Received))
 }
 
-// InvalidAuthError is the error returned when the ntor AUTH tags do not match.
+// InvalidAuthError is the error returned when the drivelcrypto AUTH tags do not match.
 // This error is fatal and the connection MUST be dropped.
 type InvalidAuthError struct {
-	Derived  *ntor.Auth
-	Received *ntor.Auth
+	Derived  *drivelcrypto.Auth
+	Received *drivelcrypto.Auth
 }
 
 func (e *InvalidAuthError) Error() string {
-	return fmt.Sprintf("handshake: ntor AUTH mismatch: Derived: %s Received:%s.",
+	return fmt.Sprintf("handshake: drivelcrypto AUTH mismatch: Derived: %s Received:%s.",
 		hex.EncodeToString(e.Derived.Bytes()[:]),
 		hex.EncodeToString(e.Received.Bytes()[:]))
 }
 
 type clientHandshake struct {
 	keypair        *okems.Keypair
-	nodeID         *ntor.NodeID
+	nodeID         *drivelcrypto.NodeID
 	serverIdentity *okems.PublicKey
 	epochHour      []byte
 
 	padLen int
 	mac    hash.Hash
 
-	serverRepresentative *ntor.Representative
-	serverAuth           *ntor.Auth
+	serverRepresentative *drivelcrypto.Representative
+	serverAuth           *drivelcrypto.Auth
 	serverMark           []byte
 }
 
-func newClientHandshake(nodeID *ntor.NodeID, serverIdentity *okems.PublicKey, sessionKey *okems.Keypair) *clientHandshake {
+func newClientHandshake(nodeID *drivelcrypto.NodeID, serverIdentity *okems.PublicKey, sessionKey *okems.Keypair) *clientHandshake {
 	hs := new(clientHandshake)
 	hs.keypair = sessionKey
 	hs.nodeID = nodeID
@@ -182,11 +182,11 @@ func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error
 	}
 
 	if hs.serverRepresentative == nil || hs.serverAuth == nil {
-		// Pull out the representative/AUTH. (XXX: Add ctors to ntor)
-		hs.serverRepresentative = new(ntor.Representative)
-		copy(hs.serverRepresentative.Bytes()[:], resp[0:ntor.RepresentativeLength])
-		hs.serverAuth = new(ntor.Auth)
-		copy(hs.serverAuth.Bytes()[:], resp[ntor.RepresentativeLength:])
+		// Pull out the representative/AUTH. (XXX: Add ctors to drivelcrypto)
+		hs.serverRepresentative = new(drivelcrypto.Representative)
+		copy(hs.serverRepresentative.Bytes()[:], resp[0:drivelcrypto.RepresentativeLength])
+		hs.serverAuth = new(drivelcrypto.Auth)
+		copy(hs.serverAuth.Bytes()[:], resp[drivelcrypto.RepresentativeLength:])
 
 		// Derive the mark.
 		hs.mac.Reset()
@@ -195,7 +195,7 @@ func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error
 	}
 
 	// Attempt to find the mark + MAC.
-	pos := findMarkMac(hs.serverMark, resp, ntor.RepresentativeLength+ntor.AuthLength+serverMinPadLength,
+	pos := findMarkMac(hs.serverMark, resp, drivelcrypto.RepresentativeLength+drivelcrypto.AuthLength+serverMinPadLength,
 		maxHandshakeLength, false)
 	if pos == -1 {
 		if len(resp) >= maxHandshakeLength {
@@ -216,12 +216,12 @@ func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error
 
 	// Complete the handshake.
 	serverPublic := hs.serverRepresentative.ToPublic()
-	ok, seed, auth := ntor.ClientHandshake(hs.keypair, serverPublic,
+	ok, seed, auth := drivelcrypto.ClientHandshake(hs.keypair, serverPublic,
 		hs.serverIdentity, hs.nodeID)
 	if !ok {
-		return 0, nil, ErrNtorFailed
+		return 0, nil, ErrdrivelcryptoFailed
 	}
-	if !ntor.CompareAuth(auth, hs.serverAuth.Bytes()[:]) {
+	if !drivelcrypto.CompareAuth(auth, hs.serverAuth.Bytes()[:]) {
 		return 0, nil, &InvalidAuthError{auth, hs.serverAuth}
 	}
 
@@ -230,19 +230,19 @@ func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error
 
 type serverHandshake struct {
 	keypair        *okems.Keypair
-	nodeID         *ntor.NodeID
+	nodeID         *drivelcrypto.NodeID
 	serverIdentity *okems.Keypair
 	epochHour      []byte
-	serverAuth     *ntor.Auth
+	serverAuth     *drivelcrypto.Auth
 
 	padLen int
 	mac    hash.Hash
 
-	clientRepresentative *ntor.Representative
+	clientRepresentative *drivelcrypto.Representative
 	clientMark           []byte
 }
 
-func newServerHandshake(nodeID *ntor.NodeID, serverIdentity *okems.Keypair, sessionKey *okems.Keypair) *serverHandshake {
+func newServerHandshake(nodeID *drivelcrypto.NodeID, serverIdentity *okems.Keypair, sessionKey *okems.Keypair) *serverHandshake {
 	hs := new(serverHandshake)
 	hs.keypair = sessionKey
 	hs.nodeID = nodeID
@@ -263,9 +263,9 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 	}
 
 	if hs.clientRepresentative == nil {
-		// Pull out the representative/AUTH. (XXX: Add ctors to ntor)
-		hs.clientRepresentative = new(ntor.Representative)
-		copy(hs.clientRepresentative.Bytes()[:], resp[0:ntor.RepresentativeLength])
+		// Pull out the representative/AUTH. (XXX: Add ctors to drivelcrypto)
+		hs.clientRepresentative = new(drivelcrypto.Representative)
+		copy(hs.clientRepresentative.Bytes()[:], resp[0:drivelcrypto.RepresentativeLength])
 
 		// Derive the mark.
 		hs.mac.Reset()
@@ -274,7 +274,7 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 	}
 
 	// Attempt to find the mark + MAC.
-	pos := findMarkMac(hs.clientMark, resp, ntor.RepresentativeLength+clientMinPadLength,
+	pos := findMarkMac(hs.clientMark, resp, drivelcrypto.RepresentativeLength+clientMinPadLength,
 		maxHandshakeLength, true)
 	if pos == -1 {
 		if len(resp) >= maxHandshakeLength {
@@ -322,10 +322,10 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 	}
 
 	clientPublic := hs.clientRepresentative.ToPublic()
-	ok, seed, auth := ntor.ServerHandshake(clientPublic, hs.keypair,
+	ok, seed, auth := drivelcrypto.ServerHandshake(clientPublic, hs.keypair,
 		hs.serverIdentity, hs.nodeID)
 	if !ok {
-		return nil, ErrNtorFailed
+		return nil, ErrdrivelcryptoFailed
 	}
 	hs.serverAuth = auth
 
@@ -343,7 +343,7 @@ func (hs *serverHandshake) generateHandshake() ([]byte, error) {
 
 	// The server handshake is Y | AUTH | P_S | M_S | MAC(Y | AUTH | P_S | M_S | E) where:
 	//  * Y is the server's ephemeral Curve25519 public key representative.
-	//  * AUTH is the ntor handshake AUTH value.
+	//  * AUTH is the drivelcrypto handshake AUTH value.
 	//  * P_S is [serverMinPadLength,serverMaxPadLength] bytes of random padding.
 	//  * M_S is HMAC-SHA256-128(serverIdentity | NodeID, Y)
 	//  * MAC is HMAC-SHA256-128(serverIdentity | NodeID, Y .... E)

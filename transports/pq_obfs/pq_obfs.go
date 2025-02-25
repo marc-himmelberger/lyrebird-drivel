@@ -44,11 +44,11 @@ import (
 
 	pt "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/goptlib"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/drbg"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/ntor"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/probdist"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/base"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/drivelcrypto"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/framing"
 )
 
@@ -85,7 +85,7 @@ const (
 var biasedDist bool
 
 type pq_obfsClientArgs struct {
-	nodeID     *ntor.NodeID
+	nodeID     *drivelcrypto.NodeID
 	publicKey  *okems.PublicKey
 	sessionKey *okems.Keypair
 	iatMode    int
@@ -153,7 +153,7 @@ func (cf *pq_obfsClientFactory) Transport() base.Transport {
 }
 
 func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
-	var nodeID *ntor.NodeID
+	var nodeID *drivelcrypto.NodeID
 	var publicKey *okems.PublicKey
 
 	// TODO this receives B, NodeID!
@@ -175,7 +175,7 @@ func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 			return nil, fmt.Errorf("missing argument '%s'", nodeIDArg)
 		}
 		var err error
-		if nodeID, err = ntor.NodeIDFromHex(nodeIDStr); err != nil {
+		if nodeID, err = drivelcrypto.NodeIDFromHex(nodeIDStr); err != nil {
 			return nil, err
 		}
 
@@ -238,7 +238,7 @@ type pq_obfsServerFactory struct {
 	transport base.Transport
 	args      *pt.Args
 
-	nodeID       *ntor.NodeID
+	nodeID       *drivelcrypto.NodeID
 	identityKey  *okems.Keypair
 	lenSeed      *drbg.Seed
 	iatSeed      *drbg.Seed
@@ -345,7 +345,7 @@ func newPq_obfsClientConn(conn net.Conn, args *pq_obfsClientArgs) (c *pq_obfsCon
 	return
 }
 
-func (conn *pq_obfsConn) clientHandshake(nodeID *ntor.NodeID, peerIdentityKey *okems.PublicKey, sessionKey *okems.Keypair) error {
+func (conn *pq_obfsConn) clientHandshake(nodeID *drivelcrypto.NodeID, peerIdentityKey *okems.PublicKey, sessionKey *okems.Keypair) error {
 	if conn.isServer {
 		return fmt.Errorf("clientHandshake called on server connection")
 	}
@@ -382,7 +382,7 @@ func (conn *pq_obfsConn) clientHandshake(nodeID *ntor.NodeID, peerIdentityKey *o
 		_ = conn.receiveBuffer.Next(n)
 
 		// Use the derived key material to intialize the link crypto.
-		okm := ntor.Kdf(seed, framing.KeyLength*2)
+		okm := drivelcrypto.Kdf(seed, framing.KeyLength*2)
 		conn.encoder = framing.NewEncoder(okm[:framing.KeyLength])
 		conn.decoder = framing.NewDecoder(okm[framing.KeyLength:])
 
@@ -425,7 +425,7 @@ func (conn *pq_obfsConn) serverHandshake(sf *pq_obfsServerFactory, sessionKey *o
 		}
 
 		// Use the derived key material to intialize the link crypto.
-		okm := ntor.Kdf(seed, framing.KeyLength*2)
+		okm := drivelcrypto.Kdf(seed, framing.KeyLength*2)
 		conn.encoder = framing.NewEncoder(okm[framing.KeyLength:])
 		conn.decoder = framing.NewDecoder(okm[:framing.KeyLength])
 
@@ -439,7 +439,7 @@ func (conn *pq_obfsConn) serverHandshake(sf *pq_obfsServerFactory, sessionKey *o
 	// Rebalance this by tweaking the client mimimum padding/server maximum
 	// padding, and sending the PRNG seed unpadded (As in, treat the PRNG seed
 	// as part of the server response).  See inlineSeedFrameLength in
-	// handshake_ntor.go.
+	// handshake.go.
 
 	// Generate/send the response.
 	blob, err := hs.generateHandshake()

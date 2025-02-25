@@ -40,8 +40,8 @@ import (
 	pt "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/goptlib"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/drbg"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/ntor"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/okems"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/drivelcrypto"
 )
 
 const (
@@ -49,7 +49,7 @@ const (
 	bridgeFile = "pq_obfs_bridgeline.txt"
 
 	certSuffix = "=="
-	certLength = ntor.NodeIDLength + ntor.PublicKeyLength
+	certLength = drivelcrypto.NodeIDLength + drivelcrypto.PublicKeyLength
 )
 
 type jsonServerState struct {
@@ -68,13 +68,13 @@ func (cert *pq_obfsServerCert) String() string {
 	return strings.TrimSuffix(base64.StdEncoding.EncodeToString(cert.raw), certSuffix)
 }
 
-func (cert *pq_obfsServerCert) unpack() (*ntor.NodeID, *okems.PublicKey) {
+func (cert *pq_obfsServerCert) unpack() (*drivelcrypto.NodeID, *okems.PublicKey) {
 	if len(cert.raw) != certLength {
 		panic(fmt.Sprintf("cert length %d is invalid", len(cert.raw)))
 	}
 
-	nodeID, _ := ntor.NewNodeID(cert.raw[:ntor.NodeIDLength])
-	pubKey, _ := okems.NewPublicKey(cert.raw[ntor.NodeIDLength:])
+	nodeID, _ := drivelcrypto.NewNodeID(cert.raw[:drivelcrypto.NodeIDLength])
+	pubKey, _ := okems.NewPublicKey(cert.raw[drivelcrypto.NodeIDLength:])
 
 	return nodeID, pubKey
 }
@@ -99,7 +99,7 @@ func serverCertFromState(st *pq_obfsServerState) *pq_obfsServerCert {
 }
 
 type pq_obfsServerState struct {
-	nodeID      *ntor.NodeID
+	nodeID      *drivelcrypto.NodeID
 	identityKey *okems.Keypair
 	drbgSeed    *drbg.Seed
 	iatMode     int
@@ -152,7 +152,7 @@ func serverStateFromJSONServerState(stateDir string, js *jsonServerState) (*pq_o
 	var err error
 
 	st := new(pq_obfsServerState)
-	if st.nodeID, err = ntor.NodeIDFromHex(js.NodeID); err != nil {
+	if st.nodeID, err = drivelcrypto.NodeIDFromHex(js.NodeID); err != nil {
 		return nil, err
 	}
 	if st.identityKey, err = okems.KeypairFromHex(js.PrivateKey, js.PublicKey); err != nil {
@@ -199,11 +199,11 @@ func newJSONServerState(stateDir string, js *jsonServerState) (err error) {
 	// Generate everything a server needs, using the cryptographic PRNG.
 	// TODO this generates the initial identity!
 	var st pq_obfsServerState
-	rawID := make([]byte, ntor.NodeIDLength)
+	rawID := make([]byte, drivelcrypto.NodeIDLength)
 	if err = csrand.Bytes(rawID); err != nil {
 		return
 	}
-	if st.nodeID, err = ntor.NewNodeID(rawID); err != nil {
+	if st.nodeID, err = drivelcrypto.NewNodeID(rawID); err != nil {
 		return
 	}
 	if st.identityKey, err = okems.NewKeypair(); err != nil {
