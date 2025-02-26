@@ -48,16 +48,13 @@ import (
 const (
 	maxHandshakeLength = 8192
 
-	clientMinPadLength = (serverMinHandshakeLength + inlineSeedFrameLength) -
-		clientMinHandshakeLength
+	clientMinPadLength       = (serverMinHandshakeLength + inlineSeedFrameLength) - clientMinHandshakeLength
 	clientMaxPadLength       = maxHandshakeLength - clientMinHandshakeLength
 	clientMinHandshakeLength = drivelcrypto.RepresentativeLength + markLength + macLength
 
-	serverMinPadLength = 0
-	serverMaxPadLength = maxHandshakeLength - (serverMinHandshakeLength +
-		inlineSeedFrameLength)
-	serverMinHandshakeLength = drivelcrypto.RepresentativeLength + drivelcrypto.AuthLength +
-		markLength + macLength
+	serverMinPadLength       = 0
+	serverMaxPadLength       = maxHandshakeLength - (serverMinHandshakeLength + inlineSeedFrameLength)
+	serverMinHandshakeLength = drivelcrypto.RepresentativeLength + drivelcrypto.AuthLength + markLength + macLength
 
 	markLength = sha256.Size / 2
 	macLength  = sha256.Size / 2
@@ -80,9 +77,9 @@ var ErrInvalidHandshake = errors.New("handshake: Failed to find M_[C,S]")
 // dropped.
 var ErrReplayedHandshake = errors.New("handshake: Replay detected")
 
-// ErrdrivelcryptoFailed is the error returned when the drivelcrypto handshake fails.  This
+// ErrDrivelcryptoFailed is the error returned when the drivelcrypto handshake fails.  This
 // error is fatal and the connection MUST be dropped.
-var ErrdrivelcryptoFailed = errors.New("handshake: drivelcrypto handshake failure")
+var ErrDrivelcryptoFailed = errors.New("handshake: drivelcrypto handshake failure")
 
 // InvalidMacError is the error returned when the handshake MACs do not match.
 // This error is fatal and the connection MUST be dropped.
@@ -109,47 +106,56 @@ func (e *InvalidAuthError) Error() string {
 		hex.EncodeToString(e.Received.Bytes()[:]))
 }
 
+// The clientHandshake struct saves all state needed for the
+// client between sending and receiving its messages.
 type clientHandshake struct {
-	keypair        *okems.Keypair
+	// already present in obfs4, set during newClientHandshake
+	keypair        *okems.Keypair // TODO should be KEM
 	nodeID         *drivelcrypto.NodeID
 	serverIdentity *okems.PublicKey
-	epochHour      []byte
+	padLen         int
 
-	padLen int
-	mac    hash.Hash
+	// new additions in Drivel, only set in generateHandshake
+	ephemeralSharedSecret []byte // K_S
+	ephemeralSecret       []byte // ES
+	encryptionKey1        []byte // EK_1
+	encryptionKey2        []byte // EK_2
 
-	serverRepresentative *drivelcrypto.Representative
-	serverAuth           *drivelcrypto.Auth
-	serverMark           []byte
+	prfEphermalSecret hash.Hash // F_1(ES, ...)
+
+	// already present in obfs4, but only set in generateHandshake
+	epochHour []byte
 }
 
+// Constructor which sets up struct for handshake. Never fails.
 func newClientHandshake(nodeID *drivelcrypto.NodeID, serverIdentity *okems.PublicKey, sessionKey *okems.Keypair) *clientHandshake {
 	hs := new(clientHandshake)
 	hs.keypair = sessionKey
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity
-	hs.padLen = csrand.IntRange(clientMinPadLength, clientMaxPadLength)
-	hs.mac = hmac.New(sha256.New, append(hs.serverIdentity.Bytes()[:], hs.nodeID.Bytes()[:]...))
+	hs.padLen = csrand.IntRange(clientMinPadLength, clientMaxPadLength) // TODO change distribution?
 
 	return hs
 }
 
 func (hs *clientHandshake) generateHandshake() ([]byte, error) {
-	// TODO this generates the first client message!
+	var err error
+	var sessionSecrets []byte
+	var okemCiphertext []byte        // c_S
+	var encClientKemPublicKey []byte // epk_e
+	var mark []byte                  // M_C
+	var mac []byte                   // MAC_C
 
-	var buf bytes.Buffer
-
-	hs.mac.Reset()
-	_, _ = hs.mac.Write(hs.keypair.Public().Bytes())
-	mark := hs.mac.Sum(nil)[:markLength]
-
-	// The client handshake is X | P_C | M_C | MAC(X | P_C | M_C | E) where:
-	//  * X is the client's ephemeral Curve25519 public key representative.
+	// The client handshake is epk_e | c_S | P_C | M_C | MAC_C(epk_e | c_S | P_C | M_C | E) where:
+	//  * epk_e is the encrypted client KEM public key.
+	//  * c_S is the (obfuscated) OKEM ciphertext.
 	//  * P_C is [clientMinPadLength,clientMaxPadLength] bytes of random padding.
-	//  * M_C is HMAC-SHA256-128(serverIdentity | NodeID, X)
-	//  * MAC is HMAC-SHA256-128(serverIdentity | NodeID, X .... E)
-	//  * E is the string representation of the number of hours since the UNIX
-	//    epoch.
+	// TODO change?
+	//  * M_C is a "mark" computed as HMAC-SHA256(ES, epk_e | c_S| ":mc")
+	// TODO do not truncate, RFC4868 does not specify those as PRFs anymore
+	// TODO but I suppose we could truncate just for Marks and MACs as per the RFC
+	//  * MAC_C is HMAC-SHA256(ES, epk_e | ... | E | ":mac_c")
+	//  * E is the string representation of the number of hours since the UNIX epoch.
 
 	// Generate the padding
 	pad, err := makePad(hs.padLen)
@@ -157,17 +163,54 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 		return nil, err
 	}
 
-	// Write X, P_C, M_C.
-	buf.Write(hs.keypair.Public().Bytes())
+	// Encapsulate with OKEM against server
+	okemCiphertext, hs.ephemeralSharedSecret, err = okems.Encaps(hs.serverIdentity)
+	if err != nil {
+		return nil, err
+	}
+
+	// Derive session secrets from NodeID and OKEM shared secret
+	prfSessionCombiner := hmac.New(sha256.New, hs.nodeID.Bytes()[:])
+	prfSessionCombiner.Reset()
+	_, _ = prfSessionCombiner.Write(hs.ephemeralSharedSecret)
+	sessionSecrets = prfSessionCombiner.Sum(nil)
+
+	// TODO Output length is too small for XOR-Encryption of an entire public key?
+	// TODO What should these lengths be? How would we expand?
+	ephemeralSecretLength := 10 // TODO move up to constants
+	hs.ephemeralSecret = sessionSecrets[:ephemeralSecretLength]
+	// XXX add KDF expand step with different :derive_key values?
+	hs.encryptionKey1 = sessionSecrets[:ephemeralSecretLength]
+	hs.encryptionKey2 = sessionSecrets[:ephemeralSecretLength]
+
+	// Prepare other PRF given our derived secrets
+	hs.prfEphermalSecret = hmac.New(sha256.New, hs.ephemeralSecret)
+
+	// Encrypt own KEM public key
+	clientKemPublicKey := hs.keypair.Public()
+	encClientKemPublicKey = drivelcrypto.XorEncryptDecrypt(hs.encryptionKey1, clientKemPublicKey.Bytes())
+	// TODO figure out how this should work?
+
+	// buf will be used to construct the final message
+	var buf bytes.Buffer
+
+	// Start building message as epk_e | c_S
+	buf.Write(encClientKemPublicKey)
+	buf.Write(okemCiphertext)
+
+	// Derive mark before padding
+	mark = drivelcrypto.MessageMark(hs.prfEphermalSecret, true, buf.Bytes())
+
+	// Continue building message with P_C | M_C
 	buf.Write(pad)
 	buf.Write(mark)
 
-	// Calculate and write the MAC.
-	hs.mac.Reset()
-	_, _ = hs.mac.Write(buf.Bytes())
+	// Generate MAC over entire message
 	hs.epochHour = []byte(strconv.FormatInt(getEpochHour(), 10))
-	_, _ = hs.mac.Write(hs.epochHour)
-	buf.Write(hs.mac.Sum(nil)[:macLength])
+	mac = drivelcrypto.MessageMAC(hs.prfEphermalSecret, true, buf.Bytes(), hs.epochHour)
+
+	// Complete message with mac
+	buf.Write(mac)
 
 	return buf.Bytes(), nil
 }
@@ -219,7 +262,7 @@ func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error
 	ok, seed, auth := drivelcrypto.ClientHandshake(hs.keypair, serverPublic,
 		hs.serverIdentity, hs.nodeID)
 	if !ok {
-		return 0, nil, ErrdrivelcryptoFailed
+		return 0, nil, ErrDrivelcryptoFailed
 	}
 	if !drivelcrypto.CompareAuth(auth, hs.serverAuth.Bytes()[:]) {
 		return 0, nil, &InvalidAuthError{auth, hs.serverAuth}
@@ -325,7 +368,7 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 	ok, seed, auth := drivelcrypto.ServerHandshake(clientPublic, hs.keypair,
 		hs.serverIdentity, hs.nodeID)
 	if !ok {
-		return nil, ErrdrivelcryptoFailed
+		return nil, ErrDrivelcryptoFailed
 	}
 	hs.serverAuth = auth
 

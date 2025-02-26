@@ -85,10 +85,9 @@ const (
 var biasedDist bool
 
 type pq_obfsClientArgs struct {
-	nodeID     *drivelcrypto.NodeID
-	publicKey  *okems.PublicKey
-	sessionKey *okems.Keypair
-	iatMode    int
+	nodeID    *drivelcrypto.NodeID
+	publicKey *okems.PublicKey
+	iatMode   int
 }
 
 // Transport is the pq_obfs implementation of the base.Transport interface.
@@ -198,16 +197,7 @@ func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 		return nil, fmt.Errorf("invalid iat-mode '%d'", iatMode)
 	}
 
-	// TODO this generates session keys!
-
-	// Generate the session key pair before connectiong to hide the Elligator2
-	// rejection sampling from network observers.
-	sessionKey, err := okems.NewKeypair()
-	if err != nil {
-		return nil, err
-	}
-
-	return &pq_obfsClientArgs{nodeID, publicKey, sessionKey, iatMode}, nil
+	return &pq_obfsClientArgs{nodeID, publicKey, iatMode}, nil
 }
 
 func (cf *pq_obfsClientFactory) Dial(network, addr string, dialFn base.DialFunc, args interface{}) (net.Conn, error) {
@@ -333,7 +323,7 @@ func newPq_obfsClientConn(conn net.Conn, args *pq_obfsClientArgs) (c *pq_obfsCon
 		return nil, err
 	}
 
-	if err = c.clientHandshake(args.nodeID, args.publicKey, args.sessionKey); err != nil {
+	if err = c.clientHandshake(args.nodeID, args.publicKey); err != nil {
 		return nil, err
 	}
 
@@ -345,12 +335,18 @@ func newPq_obfsClientConn(conn net.Conn, args *pq_obfsClientArgs) (c *pq_obfsCon
 	return
 }
 
-func (conn *pq_obfsConn) clientHandshake(nodeID *drivelcrypto.NodeID, peerIdentityKey *okems.PublicKey, sessionKey *okems.Keypair) error {
+func (conn *pq_obfsConn) clientHandshake(nodeID *drivelcrypto.NodeID, peerIdentityKey *okems.PublicKey) error {
 	if conn.isServer {
 		return fmt.Errorf("clientHandshake called on server connection")
 	}
 
 	// TODO this sends the first client message!
+
+	// Generate a new keypair
+	sessionKey, err := okems.NewKeypair() // TODO should be KEM
+	if err != nil {
+		return err
+	}
 
 	// Generate and send the client handshake.
 	hs := newClientHandshake(nodeID, peerIdentityKey, sessionKey)
