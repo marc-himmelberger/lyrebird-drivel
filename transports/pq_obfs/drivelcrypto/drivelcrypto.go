@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, Yawning Angel <yawning at schwanenlied dot me>
+ * Copyright (c) 2025, Marc Himmelberger <marc dot himmelberger at inf dot ethz dot ch>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -36,32 +36,18 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
-	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
 
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/okems"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
-
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/x25519ell2"
 )
 
 const (
-	// PublicKeyLength is the length of a Curve25519 public key.
-	PublicKeyLength = 32
-
-	// RepresentativeLength is the length of an Elligator representative.
-	RepresentativeLength = 32
-
-	// PrivateKeyLength is the length of a Curve25519 private key.
-	PrivateKeyLength = 32
-
-	// SharedSecretLength is the length of a Curve25519 shared secret.
-	SharedSecretLength = 32
-
 	// NodeIDLength is the length of a Drivel node identifier.
 	NodeIDLength = 20
 
@@ -73,28 +59,14 @@ const (
 )
 
 var protoID = []byte("Drivel")
-var tMac = append(protoID, []byte(":mac")...)
-var tKey = append(protoID, []byte(":key_extract")...)
-var tVerify = append(protoID, []byte(":key_verify")...)
+var tMarkClient = append(protoID, []byte(":mc")...)
+var tMarkServer = append(protoID, []byte(":ms")...)
+var tMacClient = append(protoID, []byte(":mac_c")...)
+var tMacServer = append(protoID, []byte(":mac_s")...)
+var tDerive = append(protoID, []byte(":derive_key")...)
+var tSKey = append(protoID, []byte(":key_extract")...)
+var tKeyVerify = append(protoID, []byte(":server_mac")...)
 var mExpand = append(protoID, []byte(":key_expand")...)
-
-// PublicKeyLengthError is the error returned when the public key being
-// imported is an invalid length.
-type PublicKeyLengthError int
-
-func (e PublicKeyLengthError) Error() string {
-	return fmt.Sprintf("drivel: Invalid Curve25519 public key length: %d",
-		int(e))
-}
-
-// PrivateKeyLengthError is the error returned when the private key being
-// imported is an invalid length.
-type PrivateKeyLengthError int
-
-func (e PrivateKeyLengthError) Error() string {
-	return fmt.Sprintf("drivel: Invalid Curve25519 private key length: %d",
-		int(e))
-}
 
 // NodeIDLengthError is the error returned when the node ID being imported is
 // an invalid length.
@@ -155,167 +127,6 @@ func (id *NodeID) Hex() string {
 	return hex.EncodeToString(id[:])
 }
 
-// PublicKey is a Curve25519 public key in little-endian byte order.
-type PublicKey [PublicKeyLength]byte
-
-// Bytes returns a pointer to the raw Curve25519 public key.
-func (public *PublicKey) Bytes() *[PublicKeyLength]byte {
-	return (*[PublicKeyLength]byte)(public)
-}
-
-// Hex returns the hexdecimal representation of the Curve25519 public key.
-func (public *PublicKey) Hex() string {
-	return hex.EncodeToString(public.Bytes()[:])
-}
-
-// NewPublicKey creates a PublicKey from the raw bytes.
-func NewPublicKey(raw []byte) (*PublicKey, error) {
-	if len(raw) != PublicKeyLength {
-		return nil, PublicKeyLengthError(len(raw))
-	}
-
-	pubKey := new(PublicKey)
-	copy(pubKey[:], raw)
-
-	return pubKey, nil
-}
-
-// PublicKeyFromHex returns a PublicKey from the hexdecimal representation.
-func PublicKeyFromHex(encoded string) (*PublicKey, error) {
-	raw, err := hex.DecodeString(encoded)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewPublicKey(raw)
-}
-
-// Representative is an Elligator representative of a Curve25519 public key
-// in little-endian byte order.
-type Representative [RepresentativeLength]byte
-
-// Bytes returns a pointer to the raw Elligator representative.
-func (repr *Representative) Bytes() *[RepresentativeLength]byte {
-	return (*[RepresentativeLength]byte)(repr)
-}
-
-// ToPublic converts a Elligator representative to a Curve25519 public key.
-func (repr *Representative) ToPublic() *PublicKey {
-	pub := new(PublicKey)
-
-	x25519ell2.RepresentativeToPublicKey(pub.Bytes(), repr.Bytes())
-	return pub
-}
-
-// PrivateKey is a Curve25519 private key in little-endian byte order.
-type PrivateKey [PrivateKeyLength]byte
-
-// Bytes returns a pointer to the raw Curve25519 private key.
-func (private *PrivateKey) Bytes() *[PrivateKeyLength]byte {
-	return (*[PrivateKeyLength]byte)(private)
-}
-
-// Hex returns the hexdecimal representation of the Curve25519 private key.
-func (private *PrivateKey) Hex() string {
-	return hex.EncodeToString(private.Bytes()[:])
-}
-
-// Keypair is a Curve25519 keypair with an optional Elligator representative.
-// As only certain Curve25519 keys can be obfuscated with Elligator, the
-// representative must be generated along with the keypair.
-type Keypair struct {
-	public         *PublicKey
-	private        *PrivateKey
-	representative *Representative
-}
-
-// Public returns the Curve25519 public key belonging to the Keypair.
-func (keypair *Keypair) Public() *PublicKey {
-	return keypair.public
-}
-
-// Private returns the Curve25519 private key belonging to the Keypair.
-func (keypair *Keypair) Private() *PrivateKey {
-	return keypair.private
-}
-
-// Representative returns the Elligator representative of the public key
-// belonging to the Keypair.
-func (keypair *Keypair) Representative() *Representative {
-	return keypair.representative
-}
-
-// HasElligator returns true if the Keypair has an Elligator representative.
-func (keypair *Keypair) HasElligator() bool {
-	return nil != keypair.representative
-}
-
-// NewKeypair generates a new Curve25519 keypair, and optionally also generates
-// an Elligator representative of the public key.
-func NewKeypair(elligator bool) (*Keypair, error) {
-	keypair := new(Keypair)
-	keypair.private = new(PrivateKey)
-	keypair.public = new(PublicKey)
-	if elligator {
-		keypair.representative = new(Representative)
-	}
-
-	for {
-		// Generate a Curve25519 private key.  Like everyone who does this,
-		// run the CSPRNG output through SHA512 for extra tinfoil hattery.
-		//
-		// Also use part of the digest that gets truncated off for the
-		// obfuscation tweak.
-		priv := keypair.private.Bytes()[:]
-		if err := csrand.Bytes(priv); err != nil {
-			return nil, err
-		}
-		digest := sha512.Sum512(priv)
-		copy(priv, digest[:])
-
-		if elligator {
-			tweak := digest[63]
-
-			// Apply the Elligator transform.  This fails ~50% of the time.
-			if !x25519ell2.ScalarBaseMult(keypair.public.Bytes(),
-				keypair.representative.Bytes(),
-				keypair.private.Bytes(),
-				tweak) {
-				continue
-			}
-		} else {
-			// Generate the corresponding Curve25519 public key.
-			curve25519.ScalarBaseMult(keypair.public.Bytes(),
-				keypair.private.Bytes())
-		}
-
-		return keypair, nil
-	}
-}
-
-// KeypairFromHex returns a Keypair from the hexdecimal representation of the
-// private key.
-func KeypairFromHex(encoded string) (*Keypair, error) {
-	raw, err := hex.DecodeString(encoded)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(raw) != PrivateKeyLength {
-		return nil, PrivateKeyLengthError(len(raw))
-	}
-
-	keypair := new(Keypair)
-	keypair.private = new(PrivateKey)
-	keypair.public = new(PublicKey)
-
-	copy(keypair.private[:], raw)
-	curve25519.ScalarBaseMult(keypair.public.Bytes(),
-		keypair.private.Bytes())
-
-	return keypair, nil
-}
-
 // ServerHandshake does the server side of a Drivel handshake and returns status,
 // KEY_SEED, and AUTH.  If status is not true, the handshake MUST be aborted.
 func ServerHandshake(clientPublic *PublicKey, serverKeypair *Keypair, idKeypair *Keypair, id *NodeID) (ok bool, keySeed *KeySeed, auth *Auth) {
@@ -370,58 +181,92 @@ func CompareAuth(auth1 *Auth, auth2 []byte) bool {
 	return hmac.Equal(auth1Bytes[:], auth2)
 }
 
-func drivelCommon(secretInput bytes.Buffer, id *NodeID, b *PublicKey, x *PublicKey, y *PublicKey) (*KeySeed, *Auth) {
-	keySeed := new(KeySeed)
-	auth := new(Auth)
+func drivelCommon(prfEphermalSecret hash.Hash, sharedKemSecret []byte,
+	serverOkemPublicKey *okems.PublicKey, okemCiphertext []byte,
+	clientKemPublicKey *okems.PublicKey, kemCiphertext []byte) (keySeed *KeySeed, auth *Auth) {
 
-	// secret_input/auth_input use this common bit, build it once.
-	suffix := bytes.NewBuffer(b.Bytes()[:])
-	suffix.Write(b.Bytes()[:])
-	suffix.Write(x.Bytes()[:])
-	suffix.Write(y.Bytes()[:])
-	suffix.Write(protoID)
-	suffix.Write(id[:])
+	var derivedSecret []byte       // ES'
+	var finalSecret []byte         // ES'
+	var prfFinalCombiner hash.Hash // F_2(ES', ...)
+	var prfFinalSecret hash.Hash   // F_1(FS, ...)
 
-	// At this point secret_input has the 2 exponents, concatenated, append the
-	// client/server common suffix.
-	secretInput.Write(suffix.Bytes())
+	// ES' = F1(ES, ":derive_key")
+	prfEphermalSecret.Reset()
+	_, _ = prfEphermalSecret.Write(tDerive)
+	derivedSecret = prfEphermalSecret.Sum(nil)
 
-	// KEY_SEED = H(secret_input, t_key)
-	h := hmac.New(sha256.New, tKey)
-	_, _ = h.Write(secretInput.Bytes())
-	tmp := h.Sum(nil)
-	copy(keySeed[:], tmp)
+	// F2(ES', ...)
+	prfFinalCombiner = hmac.New(sha256.New, derivedSecret)
 
-	// verify = H(secret_input, t_verify)
-	h = hmac.New(sha256.New, tVerify)
-	_, _ = h.Write(secretInput.Bytes())
-	verify := h.Sum(nil)
+	// FS = F2(ES', K_e)
+	prfFinalCombiner.Reset()
+	_, _ = prfFinalCombiner.Write(sharedKemSecret)
+	finalSecret = prfFinalCombiner.Sum(nil)
 
-	// auth_input = verify | ID | B | Y | X | PROTOID | "Server"
-	authInput := bytes.NewBuffer(verify)
-	_, _ = authInput.Write(suffix.Bytes())
-	_, _ = authInput.Write([]byte("Server"))
-	h = hmac.New(sha256.New, tMac)
-	_, _ = h.Write(authInput.Bytes())
-	tmp = h.Sum(nil)
-	copy(auth[:], tmp)
+	// F1(FS, ...)
+	prfFinalSecret = hmac.New(sha256.New, finalSecret)
+
+	// context = pk_S | c_S | pk_e | c_e | protoID
+	var context bytes.Buffer
+	context.Write(serverOkemPublicKey.Bytes())
+	context.Write(okemCiphertext)
+	context.Write(clientKemPublicKey.Bytes())
+	context.Write(kemCiphertext)
+	context.Write(protoID)
+
+	// skey = F1(FS, context | ":key_extract")
+	prfFinalSecret.Reset()
+	_, _ = prfFinalSecret.Write(context.Bytes())
+	_, _ = prfFinalSecret.Write(tSKey)
+	keySeed = (*KeySeed)(prfFinalSecret.Sum(nil))
+
+	// auth = F1(FS, context | ":server_mac")
+	prfFinalSecret.Reset()
+	_, _ = prfFinalSecret.Write(context.Bytes())
+	_, _ = prfFinalSecret.Write(tKeyVerify)
+	auth = (*Auth)(prfFinalSecret.Sum(nil))
 
 	return keySeed, auth
 }
 
-func constantTimeIsZero(x []byte) int {
-	var ret byte
-	for _, v := range x {
-		ret |= v
+// MessageMark computes a mark as prf(msgMark | tMarkClient)
+// or prf(msgMark | tMarkServer) depending on `isClient`.a
+func MessageMark(prfEphermalSecret hash.Hash, isClient bool, msgMark []byte) (mark []byte) {
+	tag := tMarkServer
+	if isClient {
+		tag = tMarkClient
 	}
 
-	return subtle.ConstantTimeByteEq(ret, 0)
+	prfEphermalSecret.Reset()
+	_, _ = prfEphermalSecret.Write(msgMark)
+	_, _ = prfEphermalSecret.Write(tag)
+	mark = prfEphermalSecret.Sum(nil)
+
+	return mark
 }
 
-// Kdf extracts and expands KEY_SEED via HKDF-SHA256 and returns `okm_len` bytes
-// of key material.
-func Kdf(keySeed []byte, okmLen int) []byte {
-	kdf := hkdf.New(sha256.New, keySeed, tKey, mExpand)
+// MessageMAC computes a MAC with HMAC-SHA-256 over the entire `msg` (must include the mark)
+// followed by tMacClient or tMacServer respectively (depending on the value of `isClient`).
+func MessageMAC(prfEphermalSecret hash.Hash, isClient bool, msg []byte, epochHour []byte) (mac []byte) {
+	tag := tMacServer
+	if isClient {
+		tag = tMacClient
+	}
+
+	prfEphermalSecret.Reset()
+	_, _ = prfEphermalSecret.Write(msg)
+	_, _ = prfEphermalSecret.Write(epochHour) // TODO I think this avoids format confusion attacks, but double-check
+	_, _ = prfEphermalSecret.Write(tag)
+	mac = prfEphermalSecret.Sum(nil)
+
+	return mac
+}
+
+// KdfExpand expands pseudorandomKey via HKDF-SHA256 and returns `okm_len` bytes
+// of key material. pseudorandomKey must be a strong pseudorandom cryptographic key.
+// Info is an arbitrary identifier for the output, repeated keys will yield the same output.
+func KdfExpand(pseudorandomKey []byte, okmLen int) []byte {
+	kdf := hkdf.Expand(sha256.New, pseudorandomKey, mExpand) // TODO mExpand might need to be an argument if we derive EK1 and EK2 from ES.
 	okm := make([]byte, okmLen)
 	n, err := io.ReadFull(kdf, okm)
 	if err != nil {
@@ -431,4 +276,16 @@ func Kdf(keySeed []byte, okmLen int) []byte {
 	}
 
 	return okm
+}
+
+// Expands the key to appropriate length using KdfExpand, then XORs with the message.
+// This performs symmetric encryption/decryption and may hide structure within a message.
+// However, this function MUST NOT be called twice with the same key.
+func XorEncryptDecrypt(key []byte, message []byte) []byte {
+	expanded := KdfExpand(key, len(message))
+	n := subtle.XORBytes(expanded, expanded, message)
+	if n != len(message) {
+		panic(fmt.Sprintf("BUG: XOR encrypt/decrypt got truncated output: %d", n))
+	}
+	return expanded
 }
