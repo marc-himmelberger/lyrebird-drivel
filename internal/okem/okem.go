@@ -25,13 +25,13 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-// Package okemn provides a Go wrapper and unified interface around the
+// Package okem provides a Go wrapper and unified interface around the
 // implementation of obfuscated KEMs as e.g. constructed in
 // https://eprint.iacr.org/2024/1086.
 // Implementation leans heavily on
 // gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/ntor/ntor.go
 
-package okems // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/okems"
+package okem // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okem"
 
 import (
 	"encoding/hex"
@@ -41,7 +41,7 @@ import (
 	"github.com/open-quantum-safe/liboqs-go/oqs"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/log"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/okems/x25519ell2"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okem/dhkem_ell2"
 )
 
 var kemDetails oqs.KeyEncapsulationDetails
@@ -91,7 +91,7 @@ func init() {
 	}
 
 	if kemName == "x25519" {
-		kemDetails = x25519ell2.X25519Details()
+		kemDetails = dhkem_ell2.X25519Details()
 	} else {
 		var kem oqs.KeyEncapsulation
 		kem.Init(kemName, nil)
@@ -102,7 +102,7 @@ func init() {
 	// TODO: add other implementations from https://github.com/open-quantum-safe/liboqs/blob/main/src/kem/kem.h#L42
 	switch kemDetails.Name {
 	case "x25519":
-		encoder = &x25519ell2.X25519ell2Encoder{}
+		encoder = &dhkem_ell2.X25519ell2Encoder{}
 	//case "KEM1", "KEM2":
 	//	encoder = Kem1Encoder{}
 	default:
@@ -193,7 +193,7 @@ func NewKeypair() (*Keypair, error) {
 	keypair.public = new(PublicKey)
 
 	if kemDetails.Name == "x25519" {
-		err = x25519ell2.NewKeypair(keypair.private.kemPrivateKey, keypair.public.kemPublicKey, keypair.public.obfuscated)
+		err = dhkem_ell2.NewKeypair(keypair.private.kemPrivateKey, keypair.public.kemPublicKey, keypair.public.obfuscated)
 		if err != nil {
 			return nil, err
 		} else {
@@ -261,7 +261,7 @@ func Encaps(public *PublicKey) (obfCiphertext []byte, sharedSecret []byte, err e
 
 	if kemDetails.Name == "x25519" {
 		// ciphertext is a novel obfuscated public key
-		obfCiphertext, sharedSecret, err = x25519ell2.OkemEncaps(public.kemPublicKey)
+		obfCiphertext, sharedSecret, err = dhkem_ell2.OkemEncaps(public.kemPublicKey)
 		if err != nil {
 			return nil, nil, err
 		} else {
@@ -301,7 +301,7 @@ func Decaps(private *PrivateKey, obfCiphertext []byte) (sharedSecret []byte, err
 
 	if kemDetails.Name == "x25519" {
 		// ciphertext is an obfuscated public key
-		sharedSecret, err = x25519ell2.OkemDecaps(private.kemPrivateKey, obfCiphertext)
+		sharedSecret, err = dhkem_ell2.OkemDecaps(private.kemPrivateKey, obfCiphertext)
 		if err != nil {
 			return sharedSecret, err
 		} else {

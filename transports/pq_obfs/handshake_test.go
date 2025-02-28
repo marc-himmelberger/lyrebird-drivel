@@ -32,22 +32,22 @@ import (
 	"testing"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/okems"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okem"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/drivelcrypto"
 )
 
 func TestHandshakeDrivelcryptoClient(t *testing.T) {
 	// Generate the server node id and id keypair, and ephemeral session keys.
 	nodeID, _ := drivelcrypto.NewNodeID([]byte("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13"))
-	idKeypair, _ := okems.NewKeypair()
+	idKeypair, _ := okem.NewKeypair()
 	serverFilter, _ := replayfilter.New(replayTTL)
-	clientKeypair, err := okems.NewKeypair()
+	clientKeypair, err := okem.NewKeypair()
 	if err != nil {
-		t.Fatalf("client: okems.NewKeypair failed: %s", err)
+		t.Fatalf("client: okem.NewKeypair failed: %s", err)
 	}
-	serverKeypair, err := okems.NewKeypair()
+	serverKeypair, err := okem.NewKeypair()
 	if err != nil {
-		t.Fatalf("server: okems.NewKeypair failed: %s", err)
+		t.Fatalf("server: okem.NewKeypair failed: %s", err)
 	}
 
 	// Test client handshake padding.
@@ -135,15 +135,15 @@ func TestHandshakeDrivelcryptoClient(t *testing.T) {
 func TestHandshakeDrivelcryptoServer(t *testing.T) {
 	// Generate the server node id and id keypair, and ephemeral session keys.
 	nodeID, _ := drivelcrypto.NewNodeID([]byte("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13"))
-	idKeypair, _ := okems.NewKeypair()
+	idKeypair, _ := okem.NewKeypair()
 	serverFilter, _ := replayfilter.New(replayTTL)
-	clientKeypair, err := okems.NewKeypair()
+	clientKeypair, err := okem.NewKeypair()
 	if err != nil {
-		t.Fatalf("client: okems.NewKeypair failed: %s", err)
+		t.Fatalf("client: okem.NewKeypair failed: %s", err)
 	}
-	serverKeypair, err := okems.NewKeypair()
+	serverKeypair, err := okem.NewKeypair()
 	if err != nil {
-		t.Fatalf("server: okems.NewKeypair failed: %s", err)
+		t.Fatalf("server: okem.NewKeypair failed: %s", err)
 	}
 
 	// Test server handshake padding.

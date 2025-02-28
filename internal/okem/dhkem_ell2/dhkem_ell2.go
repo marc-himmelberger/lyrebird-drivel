@@ -17,7 +17,7 @@
 // together with Yawning Angel's x25519ell2 implementation in lyrebird/internal/x25519ell2
 // in order to provide a keygen-encapsulate-then-encode obfuscated KEM as in
 // https://eprint.iacr.org/2024/1086.pdf
-package x25519ell2
+package dhkem_ell2
 
 import (
 	"crypto/sha512"
@@ -28,7 +28,7 @@ import (
 	"golang.org/x/crypto/curve25519"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
-	base "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/x25519ell2"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/x25519ell2"
 )
 
 const (
@@ -89,7 +89,7 @@ func (encoder *X25519ell2Encoder) DecodePublicKey(kemPublicKey []byte, obfPublic
 	// needed for constructing PublicKey objects and Encaps()-ing on them
 	pkArr := (*[PublicKeyLength]byte)(kemPublicKey)
 	obfArr := (*[RepresentativeLength]byte)(obfPublicKey)
-	base.RepresentativeToPublicKey(pkArr, obfArr)
+	x25519ell2.RepresentativeToPublicKey(pkArr, obfArr)
 }
 func (encoder *X25519ell2Encoder) EncodeCiphertext(obfCiphertext []byte, kemCiphertext []byte) (ok bool) {
 	// this would correspond to encoding a public key, but after using NewKeypair during OkemEncaps below,
@@ -107,7 +107,7 @@ func ScalarBaseMult(publicKey []byte, representative []byte, privateKey []byte, 
 	pkArr := (*[PublicKeyLength]byte)(publicKey)
 	reprArr := (*[RepresentativeLength]byte)(representative)
 	privArr := (*[PrivateKeyLength]byte)(privateKey)
-	return base.ScalarBaseMult(pkArr, reprArr, privArr, tweak)
+	return x25519ell2.ScalarBaseMult(pkArr, reprArr, privArr, tweak)
 }
 
 // ### The following implement OKEM operations for x25519ell2 ###
@@ -137,7 +137,7 @@ func NewKeypair(privateBuf []byte, publicBuf []byte, obfPublicBuf []byte) error 
 		tweak = digest[63]
 
 		// Apply the Elligator transform.  This fails ~50% of the time.
-		if !base.ScalarBaseMult((*[32]byte)(publicBuf), (*[32]byte)(obfPublicBuf), (*[32]byte)(privateBuf), tweak) {
+		if !x25519ell2.ScalarBaseMult((*[32]byte)(publicBuf), (*[32]byte)(obfPublicBuf), (*[32]byte)(privateBuf), tweak) {
 			continue
 		}
 
@@ -185,7 +185,7 @@ func OkemDecaps(kemPrivateKey []byte, obfPublicKey []byte) (sharedSecret []byte,
 	obfPkArr := (*[RepresentativeLength]byte)(obfPublicKey)
 	privArr := (*[PrivateKeyLength]byte)(kemPrivateKey)
 
-	base.RepresentativeToPublicKey(&publicBuf, obfPkArr)
+	x25519ell2.RepresentativeToPublicKey(&publicBuf, obfPkArr)
 	encoder.DecodeCiphertext(publicBuf[:], obfPublicKey)
 
 	// Client side uses EXP(Y,x) | EXP(B,x)

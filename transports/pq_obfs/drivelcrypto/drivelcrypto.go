@@ -42,7 +42,7 @@ import (
 	"hash"
 	"io"
 
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/okems"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okem"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
 )
@@ -182,8 +182,8 @@ func CompareAuth(auth1 *Auth, auth2 []byte) bool {
 }
 
 func drivelCommon(prfEphermalSecret hash.Hash, sharedKemSecret []byte,
-	serverOkemPublicKey *okems.PublicKey, okemCiphertext []byte,
-	clientKemPublicKey *okems.PublicKey, kemCiphertext []byte) (keySeed *KeySeed, auth *Auth) {
+	serverOkemPublicKey *okem.PublicKey, okemCiphertext []byte,
+	clientKemPublicKey *okem.PublicKey, kemCiphertext []byte) (keySeed *KeySeed, auth *Auth) {
 
 	var derivedSecret []byte       // ES'
 	var finalSecret []byte         // ES'
