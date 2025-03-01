@@ -26,26 +26,17 @@
  */
 
 // Package okem provides a Go wrapper and unified interface around the
-// implementation of obfuscated KEMs as e.g. constructed in
-// https://eprint.iacr.org/2024/1086.
-// Implementation leans heavily on
-// gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/ntor/ntor.go
+// implementation of KEMs.
 
-package okem // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okem"
+package kem // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kem"
 
-import (
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
-)
+import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
 
-// An ObfuscatedKem (OKEM) defines an interface for key exchange mechanisms outputting
-// obfuscated ciphertexts which are hard to distinguish from uniformly random bitstrings.
-// Public Keys remain (as in unobfuscated KEMs) without this guarantee,
-// i.e. public keys are not obfuscated.
-// This is a slight departure from the definition in https://eprint.iacr.org/2024/1086
-// because public key uniformity is not needed in Drivel as we only transmit encrypted
-// public keys during the handshake.
-// OKEM public keys are distributed with the bridge information out-of-band.
-type ObfuscatedKem interface {
+// A KeyEncapsulationMechanism (KEM) defines an interface for key exchange mechanisms,
+// a more modern abstraction for key exchange compared to e.g. Diffie-Hellman.
+// KEM public keys and ciphertext may be easily distinguishable from random bits,
+// and are therefore not suitable for direct transmission in Drivel.
+type KeyEncapsulationMechanism interface {
 	Name() string
 
 	LengthPublicKey() int
@@ -54,35 +45,36 @@ type ObfuscatedKem interface {
 	LengthSharedSecret() int
 
 	KeyGen() *Keypair
-	Encaps(PublicKey) (ObfuscatedCiphertext, SharedSecret)
-	Decaps(PrivateKey, ObfuscatedCiphertext) SharedSecret
+	Encaps(PublicKey) (Ciphertext, SharedSecret)
+	Decaps(PrivateKey, Ciphertext) SharedSecret
 }
 
-// PublicKey is an OKEM public key
+// PublicKey is an KEM public key
 type PublicKey cryptodata.CryptoData
 
-// PrivateKey is an OKEM private key
+// PrivateKey is an KEM private key
 type PrivateKey cryptodata.CryptoData
 
-// ObfuscatedCiphertext is an OKEM ciphertext.
-// This data, without knowing the private key, is indistinguishable from random bits.
-type ObfuscatedCiphertext cryptodata.CryptoData
+// Ciphertext is an KEM ciphertext.
+// This data, without knowing the private key, is indistinguishable
+// from a randomly generated ciphertext, but not from random bits.
+type Ciphertext cryptodata.CryptoData
 
-// SharedSecret is an OKEM shared secret suitable for use as a symmetric key
+// SharedSecret is an KEM shared secret suitable for use as a symmetric key
 type SharedSecret cryptodata.CryptoData
 
-// Keypair is an OKEM keypair, consisting public and private keys
+// Keypair is an KEM keypair, consisting public and private keys
 type Keypair struct {
 	private PrivateKey
 	public  PublicKey
 }
 
-// Public returns the OKEM public key belonging to the Keypair.
+// Public returns the KEM public key belonging to the Keypair.
 func (keypair *Keypair) Public() PublicKey {
 	return keypair.public
 }
 
-// Private returns the OKEM private key belonging to the Keypair.
+// Private returns the KEM private key belonging to the Keypair.
 func (keypair *Keypair) Private() PrivateKey {
 	return keypair.private
 }
@@ -91,12 +83,12 @@ func (keypair *Keypair) Private() PrivateKey {
 // the public and private key. Public keys cannot always be reconstructed
 // from private keys, see https://github.com/open-quantum-safe/liboqs/issues/1802
 // Inputs must correpsond to outputs of the corresponding Hex() functions
-func KeypairFromHex(okem ObfuscatedKem, encodedPrivate string, encodedPublic string) (*Keypair, error) {
-	dataPrivate, err := cryptodata.NewFromHex(encodedPrivate, okem.LengthPrivateKey())
+func KeypairFromHex(kem KeyEncapsulationMechanism, encodedPrivate string, encodedPublic string) (*Keypair, error) {
+	dataPrivate, err := cryptodata.NewFromHex(encodedPrivate, kem.LengthPrivateKey())
 	if err != nil {
 		return nil, err
 	}
-	dataPublic, err := cryptodata.NewFromHex(encodedPublic, okem.LengthPublicKey())
+	dataPublic, err := cryptodata.NewFromHex(encodedPublic, kem.LengthPublicKey())
 	if err != nil {
 		return nil, err
 	}
