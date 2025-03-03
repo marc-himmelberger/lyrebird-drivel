@@ -30,7 +30,23 @@
 
 package kem // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kem"
 
-import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
+import (
+	"fmt"
+	"slices"
+
+	"github.com/open-quantum-safe/liboqs-go/oqs"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/log"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
+)
+
+var oqsEnabledKEMs []string
+
+func init() {
+	supportedKEMs := oqs.SupportedKEMs()
+	log.Infof("OQS - supported KEMs: %s", supportedKEMs)
+	oqsEnabledKEMs = oqs.EnabledKEMs()
+	log.Infof("OQS - enabled KEMs:   %s", oqsEnabledKEMs)
+}
 
 // A KeyEncapsulationMechanism (KEM) defines an interface for key exchange mechanisms,
 // a more modern abstraction for key exchange compared to e.g. Diffie-Hellman.
@@ -47,6 +63,23 @@ type KeyEncapsulationMechanism interface {
 	KeyGen() *Keypair
 	Encaps(PublicKey) (Ciphertext, SharedSecret)
 	Decaps(PrivateKey, Ciphertext) SharedSecret
+}
+
+/*
+Constructs an KEM scheme given a name.
+Legal values for names are:
+  - "x25519" for a wrapper around the corresponding obfs4 implementation without obfuscation,
+    but suitable for elligator2 encoding provided via [okem.NewOkem] as "EtE-x25519"
+  - Any valid name for a KEM enabled in the open-quantum-safe library
+*/
+func NewKem(kemName string) *KeyEncapsulationMechanism {
+	if kemName == "x25519" {
+		// TODO
+	} else if slices.Contains(oqsEnabledKEMs, kemName) {
+		// TODO
+	} else {
+		panic(fmt.Sprintf("kem: no KEM found for name: %s", kemName))
+	}
 }
 
 // PublicKey is an KEM public key

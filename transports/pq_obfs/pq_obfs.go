@@ -46,6 +46,7 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/drbg"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/probdist"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kem"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okem"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/base"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/drivelcrypto"
@@ -72,6 +73,10 @@ const (
 
 	maxIATDelay   = 100
 	maxCloseDelay = 60
+
+	// The proper way would be to add a TOR_PT_CLIENT_TRANSPORT_OPTIONS
+	kemName  = "dhkem"
+	okemName = "dhkem_ell2"
 )
 
 const (
@@ -83,6 +88,12 @@ const (
 // biasedDist controls if the probability table will be ScrambleSuit style or
 // uniformly distributed.
 var biasedDist bool
+
+// kem controls what KEM is used to instantiate Drivel.
+var kemScheme kem.KeyEncapsulationMechanism
+
+// okem controls what OKEM is used to instantiate Drivel.
+var okemScheme okem.ObfuscatedKem
 
 type pq_obfsClientArgs struct {
 	nodeID    *drivelcrypto.NodeID
@@ -642,6 +653,9 @@ func (conn *pq_obfsConn) padBurst(burst *bytes.Buffer, toPadTo int) (err error) 
 
 func init() {
 	flag.BoolVar(&biasedDist, biasCmdArg, false, "Enable pq_obfs using ScrambleSuit style table generation")
+
+	kemScheme = *kem.NewKem(kemName)
+	okemScheme = *okem.NewOkem(okemName)
 }
 
 var _ base.ClientFactory = (*pq_obfsClientFactory)(nil)

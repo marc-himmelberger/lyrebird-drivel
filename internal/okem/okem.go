@@ -34,7 +34,12 @@
 package okem // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okem"
 
 import (
+	"fmt"
+	"strings"
+
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kem"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okem/dhkem_ell2"
 )
 
 // An ObfuscatedKem (OKEM) defines an interface for key exchange mechanisms outputting
@@ -56,6 +61,53 @@ type ObfuscatedKem interface {
 	KeyGen() *Keypair
 	Encaps(PublicKey) (ObfuscatedCiphertext, SharedSecret)
 	Decaps(PrivateKey, ObfuscatedCiphertext) SharedSecret
+}
+
+/*
+Constructs an OKEM scheme given a name.
+Legal values for names are:
+  - "EtE-<kem_name>" if "<kem_name>" is a valid name for
+    [kem.NewKem], and a corresponding [EncapsThenEncode] is implemented.
+  - TODO Optional - "OEINC[<okem1>,<okem2>]" if "<okem1>" and "<okem2>" are both
+    valid names for [okem.NewOkem]
+*/
+func NewOkem(okemName string) *ObfuscatedKem {
+	if strings.HasPrefix(okemName, "EtE-") {
+		// "EtE-<kem_name>" if "<kem_name>" is a valid name for [kem.NewKem]
+		// Construct KEM
+		kemName := okemName[4:]
+		kem := kem.NewKem(kemName)
+		// Select encoder
+		// TODO: cover more implementations from https://github.com/open-quantum-safe/liboqs/blob/main/src/kem/kem.h#L42
+		var encoder EncapsThenEncode
+		switch kemName {
+		case "DHKEM":
+			encoder = &dhkem_ell2.X25519ell2Encoder{}
+		//case "KEM1", "KEM2":
+		//	encoder = Kem1Encoder{}
+		default:
+			panic(fmt.Sprintf("no encoding mapped for KEM %s", kemDetails.Name))
+		}
+		// Combine
+		return NewEncapsThenEncode(kem, encoder)
+	} else if strings.HasPrefix(okemName, "OEINC[") && strings.HasSuffix(okemName, "]") {
+		// "OEINC[<okem1>,<okem2>]" if "<okem1>" and "<okem2>" are both valid names for [okem.NewOkem]
+		// Extract names
+		componentNames := okemName[6 : len(okemName)-1]
+		components := strings.Split(componentNames, ",")
+		if len(components) != 2 {
+			panic(fmt.Sprintf("okem: invalid number of OEINC component OKEMs: %s", okemName))
+		}
+		okemName1 := components[0]
+		okemName2 := components[1]
+		// Construct OKEMs
+		okem1 := NewOkem(okemName1)
+		okem2 := NewOkem(okemName2)
+		// Combine
+		return NewOEINC(okem1, okem2)
+	} else {
+		panic(fmt.Sprintf("okem: no OKEM construction found for name: %s", okemName))
+	}
 }
 
 // PublicKey is an OKEM public key
