@@ -40,6 +40,7 @@ import (
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/drivelcrypto"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/framing"
@@ -109,8 +110,12 @@ func (e *InvalidAuthError) Error() string {
 // The clientHandshake struct saves all state needed for the
 // client between sending and receiving its messages.
 type clientHandshake struct {
+	// Interface references for employed schemes
+	okem okems.ObfuscatedKem
+	kem  kems.KeyEncapsulationMechanism
+
 	// already present in obfs4, set during newClientHandshake
-	keypair        *okems.Keypair // TODO should be KEM
+	keypair        *kems.Keypair
 	nodeID         *drivelcrypto.NodeID
 	serverIdentity *okems.PublicKey
 	padLen         int
@@ -128,8 +133,14 @@ type clientHandshake struct {
 }
 
 // Constructor which sets up struct for handshake. Never fails.
-func newClientHandshake(nodeID *drivelcrypto.NodeID, serverIdentity *okems.PublicKey, sessionKey *okems.Keypair) *clientHandshake {
+func newClientHandshake(
+	okem okems.ObfuscatedKem, kem kems.KeyEncapsulationMechanism,
+	nodeID *drivelcrypto.NodeID, serverIdentity okems.PublicKey,
+	sessionKey *kems.Keypair,
+) *clientHandshake {
 	hs := new(clientHandshake)
+	hs.okem = okem
+	hs.kem = kem
 	hs.keypair = sessionKey
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity
@@ -272,6 +283,11 @@ func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error
 }
 
 type serverHandshake struct {
+	// Interface references for employed schemes
+	okem okems.ObfuscatedKem
+	kem  kems.KeyEncapsulationMechanism
+
+	// TODO: needs to be adapted from here
 	keypair        *okems.Keypair
 	nodeID         *drivelcrypto.NodeID
 	serverIdentity *okems.Keypair
@@ -285,8 +301,13 @@ type serverHandshake struct {
 	clientMark           []byte
 }
 
-func newServerHandshake(nodeID *drivelcrypto.NodeID, serverIdentity *okems.Keypair, sessionKey *okems.Keypair) *serverHandshake {
+func newServerHandshake(
+	okem okems.ObfuscatedKem, kem kems.KeyEncapsulationMechanism,
+	nodeID *drivelcrypto.NodeID, serverIdentity *okems.Keypair,
+) *serverHandshake {
 	hs := new(serverHandshake)
+	hs.okem = okem
+	hs.kem = kem
 	hs.keypair = sessionKey
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity

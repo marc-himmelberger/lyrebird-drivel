@@ -126,6 +126,17 @@ func (data PublicKey) Hex() string {
 	return (cryptodata.CryptoData)(data).Hex()
 }
 
+// PublicKeyFromHex returns an OKEM public key from its hexdecimal representation.
+// Inputs must correpsond to outputs of [PublicKey.Hex] function.
+func PublicKeyFromHex(okem ObfuscatedKem, encodedPublic string) (PublicKey, error) {
+	dataPublic, err := cryptodata.NewFromHex(encodedPublic, okem.LengthPublicKey())
+	if err != nil {
+		return nil, err
+	}
+
+	return PublicKey(dataPublic), nil
+}
+
 // PrivateKey is an OKEM private key
 type PrivateKey cryptodata.CryptoData
 
@@ -201,7 +212,7 @@ func (keypair *Keypair) Private() PrivateKey {
 // the public and private keys. Public keys cannot always be reconstructed
 // from private keys, see https://github.com/open-quantum-safe/liboqs/issues/1802
 // This function is intended for use within a scheme construction.
-// Consumers should do serialization using the [PublicKey.Hex] methods on keys and [KeypairFromHex].
+// Consumers should do serialization using the [PublicKey.Hex], [PrivateKey.Hex] methods on keys and [KeypairFromHex].
 func KeypairFromBytes(rawPrivate []byte, rawPublic []byte, lengthPrivate int, lengthPublic int) (*Keypair, error) {
 	dataPrivate, err := cryptodata.New(rawPrivate, lengthPrivate)
 	if err != nil {
@@ -223,7 +234,7 @@ func KeypairFromBytes(rawPrivate []byte, rawPublic []byte, lengthPrivate int, le
 // KeypairFromHex returns a Keypair from the hexdecimal representation of the
 // the public and private keys. Public keys cannot always be reconstructed
 // from private keys, see https://github.com/open-quantum-safe/liboqs/issues/1802
-// Inputs must correpsond to outputs of the corresponding Hex() functions
+// Inputs must correpsond to outputs of [PublicKey.Hex], [PrivateKey.Hex].
 func KeypairFromHex(okem ObfuscatedKem, encodedPrivate string, encodedPublic string) (*Keypair, error) {
 	dataPrivate, err := cryptodata.NewFromHex(encodedPrivate, okem.LengthPrivateKey())
 	if err != nil {

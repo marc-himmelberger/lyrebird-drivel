@@ -65,7 +65,7 @@ type KeyEncapsulationMechanism interface {
 }
 
 /*
-Constructs an KEM scheme given a name.
+Constructs a KEM scheme given a name.
 Legal values for names are:
   - "x25519" for a wrapper around the corresponding obfs4 implementation without obfuscation,
     but suitable for elligator2 encoding provided via [okems.NewOkem] as "EtE-x25519"
@@ -81,7 +81,7 @@ func NewKem(kemName string) *KeyEncapsulationMechanism {
 	}
 }
 
-// PublicKey is an KEM public key
+// PublicKey is a KEM public key
 type PublicKey cryptodata.CryptoData
 
 // AssertSize checks if the public key exactly matches a given length
@@ -99,7 +99,18 @@ func (data PublicKey) Hex() string {
 	return (cryptodata.CryptoData)(data).Hex()
 }
 
-// PrivateKey is an KEM private key
+// PublicKeyFromHex returns a KEM public key from its hexdecimal representation.
+// Inputs must correpsond to outputs of [PublicKey.Hex] function.
+func PublicKeyFromHex(kem KeyEncapsulationMechanism, encodedPublic string) (PublicKey, error) {
+	dataPublic, err := cryptodata.NewFromHex(encodedPublic, kem.LengthPublicKey())
+	if err != nil {
+		return nil, err
+	}
+
+	return PublicKey(dataPublic), nil
+}
+
+// PrivateKey is a KEM private key
 type PrivateKey cryptodata.CryptoData
 
 // AssertSize checks if the private key exactly matches a given length
@@ -117,7 +128,7 @@ func (data PrivateKey) Hex() string {
 	return (cryptodata.CryptoData)(data).Hex()
 }
 
-// Ciphertext is an KEM ciphertext.
+// Ciphertext is a KEM ciphertext.
 // This data, without knowing the private key, is indistinguishable
 // from a randomly generated ciphertext, but not from random bits.
 type Ciphertext cryptodata.CryptoData
@@ -137,7 +148,7 @@ func (data Ciphertext) Hex() string {
 	return (cryptodata.CryptoData)(data).Hex()
 }
 
-// SharedSecret is an KEM shared secret suitable for use as a symmetric key
+// SharedSecret is a KEM shared secret suitable for use as a symmetric key
 type SharedSecret cryptodata.CryptoData
 
 // AssertSize checks if the KEM shared secret exactly matches a given length
@@ -155,7 +166,7 @@ func (data SharedSecret) Hex() string {
 	return (cryptodata.CryptoData)(data).Hex()
 }
 
-// Keypair is an KEM keypair, consisting public and private keys
+// Keypair is a KEM keypair, consisting public and private keys
 type Keypair struct {
 	private PrivateKey
 	public  PublicKey
@@ -175,7 +186,7 @@ func (keypair *Keypair) Private() PrivateKey {
 // the public and private keys. Public keys cannot always be reconstructed
 // from private keys, see https://github.com/open-quantum-safe/liboqs/issues/1802
 // This function is intended for use within a scheme construction.
-// Consumers should do serialization using the [PublicKey.Hex] methods on keys and [KeypairFromHex].
+// Consumers should do serialization using the [PublicKey.Hex], [PrivateKey.Hex] methods on keys and [KeypairFromHex].
 func KeypairFromBytes(rawPrivate []byte, rawPublic []byte, lengthPrivate int, lengthPublic int) (*Keypair, error) {
 	dataPrivate, err := cryptodata.New(rawPrivate, lengthPrivate)
 	if err != nil {
@@ -197,7 +208,7 @@ func KeypairFromBytes(rawPrivate []byte, rawPublic []byte, lengthPrivate int, le
 // KeypairFromHex returns a Keypair from the hexdecimal representation of the
 // the public and private keys. Public keys cannot always be reconstructed
 // from private keys, see https://github.com/open-quantum-safe/liboqs/issues/1802
-// Inputs must correpsond to outputs of the corresponding Hex() functions
+// Inputs must correpsond to outputs of [PublicKey.Hex], [PrivateKey.Hex].
 func KeypairFromHex(kem KeyEncapsulationMechanism, encodedPrivate string, encodedPublic string) (*Keypair, error) {
 	dataPrivate, err := cryptodata.NewFromHex(encodedPrivate, kem.LengthPrivateKey())
 	if err != nil {

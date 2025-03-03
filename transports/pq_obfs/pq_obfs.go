@@ -96,8 +96,11 @@ var kemScheme kems.KeyEncapsulationMechanism
 var okemScheme okems.ObfuscatedKem
 
 type pq_obfsClientArgs struct {
+	okem okems.ObfuscatedKem
+	kem  kems.KeyEncapsulationMechanism
+
 	nodeID    *drivelcrypto.NodeID
-	publicKey *okems.PublicKey
+	publicKey okems.PublicKey
 	iatMode   int
 }
 
@@ -150,7 +153,7 @@ func (t *Transport) ServerFactory(stateDir string, args *pt.Args) (base.ServerFa
 	}
 	rng := rand.New(drbg)
 
-	sf := &pq_obfsServerFactory{t, &ptArgs, st.nodeID, st.identityKey, st.drbgSeed, iatSeed, st.iatMode, filter, rng.Intn(maxCloseDelay)}
+	sf := &pq_obfsServerFactory{okemScheme, kemScheme, t, &ptArgs, st.nodeID, st.identityKey, st.drbgSeed, iatSeed, st.iatMode, filter, rng.Intn(maxCloseDelay)}
 	return sf, nil
 }
 
@@ -164,7 +167,7 @@ func (cf *pq_obfsClientFactory) Transport() base.Transport {
 
 func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 	var nodeID *drivelcrypto.NodeID
-	var publicKey *okems.PublicKey
+	var publicKey okems.PublicKey
 
 	// TODO this receives B, NodeID!
 
@@ -193,7 +196,7 @@ func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 		if !ok {
 			return nil, fmt.Errorf("missing argument '%s'", publicKeyArg)
 		}
-		if publicKey, err = okems.PublicKeyFromHex(publicKeyStr); err != nil {
+		if publicKey, err = okems.PublicKeyFromHex(okemScheme, publicKeyStr); err != nil {
 			return nil, err
 		}
 	}
@@ -208,7 +211,7 @@ func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 		return nil, fmt.Errorf("invalid iat-mode '%d'", iatMode)
 	}
 
-	return &pq_obfsClientArgs{nodeID, publicKey, iatMode}, nil
+	return &pq_obfsClientArgs{okemScheme, kemScheme, nodeID, publicKey, iatMode}, nil
 }
 
 func (cf *pq_obfsClientFactory) Dial(network, addr string, dialFn base.DialFunc, args interface{}) (net.Conn, error) {
@@ -236,6 +239,9 @@ func (cf *pq_obfsClientFactory) Dial(network, addr string, dialFn base.DialFunc,
 func (cf *pq_obfsClientFactory) OnEvent(f func(base.TransportEvent)) {}
 
 type pq_obfsServerFactory struct {
+	okem okems.ObfuscatedKem
+	kem  kems.KeyEncapsulationMechanism
+
 	transport base.Transport
 	args      *pt.Args
 
@@ -261,16 +267,6 @@ func (sf *pq_obfsServerFactory) WrapConn(conn net.Conn) (net.Conn, error) {
 	// Not much point in having a separate newPq_obfsServerConn routine when
 	// wrapping requires using values from the factory instance.
 
-	// Generate the session keypair *before* consuming data from the peer, to
-	// attempt to mask the rejection sampling due to use of Elligator2.  This
-	// might be futile, but the timing differential isn't very large on modern
-	// hardware, and there are far easier statistical attacks that can be
-	// mounted as a distinguisher.
-	sessionKey, err := okems.NewKeypair()
-	if err != nil {
-		return nil, err
-	}
-
 	lenDist := probdist.New(sf.lenSeed, 0, framing.MaximumSegmentLength, biasedDist)
 	var iatDist *probdist.WeightedDist
 	if sf.iatSeed != nil {
@@ -281,7 +277,7 @@ func (sf *pq_obfsServerFactory) WrapConn(conn net.Conn) (net.Conn, error) {
 
 	startTime := time.Now()
 
-	if err = c.serverHandshake(sf, sessionKey); err != nil {
+	if err := c.serverHandshake(sf); err != nil {
 		c.closeAfterDelay(sf, startTime)
 		return nil, err
 	}
@@ -334,7 +330,7 @@ func newPq_obfsClientConn(conn net.Conn, args *pq_obfsClientArgs) (c *pq_obfsCon
 		return nil, err
 	}
 
-	if err = c.clientHandshake(args.nodeID, args.publicKey); err != nil {
+	if err = c.clientHandshake(args); err != nil {
 		return nil, err
 	}
 
@@ -346,7 +342,7 @@ func newPq_obfsClientConn(conn net.Conn, args *pq_obfsClientArgs) (c *pq_obfsCon
 	return
 }
 
-func (conn *pq_obfsConn) clientHandshake(nodeID *drivelcrypto.NodeID, peerIdentityKey *okems.PublicKey) error {
+func (conn *pq_obfsConn) clientHandshake(args *pq_obfsClientArgs) error {
 	if conn.isServer {
 		return fmt.Errorf("clientHandshake called on server connection")
 	}
@@ -354,13 +350,10 @@ func (conn *pq_obfsConn) clientHandshake(nodeID *drivelcrypto.NodeID, peerIdenti
 	// TODO this sends the first client message!
 
 	// Generate a new keypair
-	sessionKey, err := okems.NewKeypair() // TODO should be KEM
-	if err != nil {
-		return err
-	}
+	sessionKey := args.kem.KeyGen()
 
 	// Generate and send the client handshake.
-	hs := newClientHandshake(nodeID, peerIdentityKey, sessionKey)
+	hs := newClientHandshake(args.okem, args.kem, args.nodeID, args.publicKey, sessionKey)
 	blob, err := hs.generateHandshake()
 	if err != nil {
 		return err
@@ -397,13 +390,13 @@ func (conn *pq_obfsConn) clientHandshake(nodeID *drivelcrypto.NodeID, peerIdenti
 	}
 }
 
-func (conn *pq_obfsConn) serverHandshake(sf *pq_obfsServerFactory, sessionKey *okems.Keypair) error {
+func (conn *pq_obfsConn) serverHandshake(sf *pq_obfsServerFactory) error {
 	if !conn.isServer {
 		return fmt.Errorf("serverHandshake called on client connection")
 	}
 
 	// Generate the server handshake, and arm the base timeout.
-	hs := newServerHandshake(sf.nodeID, sf.identityKey, sessionKey)
+	hs := newServerHandshake(sf.okem, sf.kem, sf.nodeID, sf.identityKey)
 	if err := conn.Conn.SetDeadline(time.Now().Add(serverHandshakeTimeout)); err != nil {
 		return err
 	}
