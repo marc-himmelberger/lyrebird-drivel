@@ -46,8 +46,8 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/drbg"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/probdist"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kem"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okem"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/base"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/drivelcrypto"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/framing"
@@ -90,14 +90,14 @@ const (
 var biasedDist bool
 
 // kem controls what KEM is used to instantiate Drivel.
-var kemScheme kem.KeyEncapsulationMechanism
+var kemScheme kems.KeyEncapsulationMechanism
 
 // okem controls what OKEM is used to instantiate Drivel.
-var okemScheme okem.ObfuscatedKem
+var okemScheme okems.ObfuscatedKem
 
 type pq_obfsClientArgs struct {
 	nodeID    *drivelcrypto.NodeID
-	publicKey *okem.PublicKey
+	publicKey *okems.PublicKey
 	iatMode   int
 }
 
@@ -164,7 +164,7 @@ func (cf *pq_obfsClientFactory) Transport() base.Transport {
 
 func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 	var nodeID *drivelcrypto.NodeID
-	var publicKey *okem.PublicKey
+	var publicKey *okems.PublicKey
 
 	// TODO this receives B, NodeID!
 
@@ -193,7 +193,7 @@ func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 		if !ok {
 			return nil, fmt.Errorf("missing argument '%s'", publicKeyArg)
 		}
-		if publicKey, err = okem.PublicKeyFromHex(publicKeyStr); err != nil {
+		if publicKey, err = okems.PublicKeyFromHex(publicKeyStr); err != nil {
 			return nil, err
 		}
 	}
@@ -240,7 +240,7 @@ type pq_obfsServerFactory struct {
 	args      *pt.Args
 
 	nodeID       *drivelcrypto.NodeID
-	identityKey  *okem.Keypair
+	identityKey  *okems.Keypair
 	lenSeed      *drbg.Seed
 	iatSeed      *drbg.Seed
 	iatMode      int
@@ -266,7 +266,7 @@ func (sf *pq_obfsServerFactory) WrapConn(conn net.Conn) (net.Conn, error) {
 	// might be futile, but the timing differential isn't very large on modern
 	// hardware, and there are far easier statistical attacks that can be
 	// mounted as a distinguisher.
-	sessionKey, err := okem.NewKeypair()
+	sessionKey, err := okems.NewKeypair()
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +346,7 @@ func newPq_obfsClientConn(conn net.Conn, args *pq_obfsClientArgs) (c *pq_obfsCon
 	return
 }
 
-func (conn *pq_obfsConn) clientHandshake(nodeID *drivelcrypto.NodeID, peerIdentityKey *okem.PublicKey) error {
+func (conn *pq_obfsConn) clientHandshake(nodeID *drivelcrypto.NodeID, peerIdentityKey *okems.PublicKey) error {
 	if conn.isServer {
 		return fmt.Errorf("clientHandshake called on server connection")
 	}
@@ -354,7 +354,7 @@ func (conn *pq_obfsConn) clientHandshake(nodeID *drivelcrypto.NodeID, peerIdenti
 	// TODO this sends the first client message!
 
 	// Generate a new keypair
-	sessionKey, err := okem.NewKeypair() // TODO should be KEM
+	sessionKey, err := okems.NewKeypair() // TODO should be KEM
 	if err != nil {
 		return err
 	}
@@ -397,7 +397,7 @@ func (conn *pq_obfsConn) clientHandshake(nodeID *drivelcrypto.NodeID, peerIdenti
 	}
 }
 
-func (conn *pq_obfsConn) serverHandshake(sf *pq_obfsServerFactory, sessionKey *okem.Keypair) error {
+func (conn *pq_obfsConn) serverHandshake(sf *pq_obfsServerFactory, sessionKey *okems.Keypair) error {
 	if !conn.isServer {
 		return fmt.Errorf("serverHandshake called on client connection")
 	}
@@ -654,8 +654,8 @@ func (conn *pq_obfsConn) padBurst(burst *bytes.Buffer, toPadTo int) (err error) 
 func init() {
 	flag.BoolVar(&biasedDist, biasCmdArg, false, "Enable pq_obfs using ScrambleSuit style table generation")
 
-	kemScheme = *kem.NewKem(kemName)
-	okemScheme = *okem.NewOkem(okemName)
+	kemScheme = *kems.NewKem(kemName)
+	okemScheme = *okems.NewOkem(okemName)
 }
 
 var _ base.ClientFactory = (*pq_obfsClientFactory)(nil)

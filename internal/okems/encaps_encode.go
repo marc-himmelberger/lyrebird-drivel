@@ -28,24 +28,24 @@
 // The encaps_encode.go file defines the encapsulate-then-encode
 // construction defined in https://eprint.iacr.org/2024/1086.
 
-package okem // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okem"
+package okems // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 
 import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/log"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kem"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
 
 // Encoders should not allocate memory nor check slice lengths.
 // Encoders may panic if the slice lengths are invalid.
 type EncapsThenEncode interface {
-	Init(kem.KeyEncapsulationMechanism)
+	Init(kems.KeyEncapsulationMechanism)
 	LengthObfuscatedCiphertext() int
 	EncodeCiphertext(obfCiphertext []byte, kemCiphertext []byte) (ok bool)
 	DecodeCiphertext(kemCiphertext []byte, obfCiphertext []byte)
 }
 
 type EncapsThenEncodeOKEM struct {
-	kem     kem.KeyEncapsulationMechanism
+	kem     kems.KeyEncapsulationMechanism
 	encoder EncapsThenEncode
 }
 
@@ -89,7 +89,7 @@ func (ete *EncapsThenEncodeOKEM) KeyGen() *Keypair {
 // Encaps of encaps-then-encapsulate construction performs KEM encapsulation and
 // then encodes the resulting ciphertext using the encoder, not changing the shared secret
 func (ete *EncapsThenEncodeOKEM) Encaps(public PublicKey) (ObfuscatedCiphertext, SharedSecret) {
-	kemPublicKey := (kem.PublicKey)(public)
+	kemPublicKey := (kems.PublicKey)(public)
 
 	kemCiphertext, sharedSecret := ete.kem.Encaps(kemPublicKey)
 
@@ -109,7 +109,7 @@ func (ete *EncapsThenEncodeOKEM) Encaps(public PublicKey) (ObfuscatedCiphertext,
 // Decaps of encaps-then-encapsulate construction uses the encoder to decode the ciphertext,
 // and performs KEM decapsulation on the result
 func (ete *EncapsThenEncodeOKEM) Decaps(private PrivateKey, obfCiphertext ObfuscatedCiphertext) SharedSecret {
-	kemPrivateKey := (kem.PrivateKey)(private)
+	kemPrivateKey := (kems.PrivateKey)(private)
 
 	kemCiphertext := make([]byte, ete.kem.LengthCiphertext())
 	ete.encoder.DecodeCiphertext(kemCiphertext, obfCiphertext)

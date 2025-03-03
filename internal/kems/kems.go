@@ -25,10 +25,10 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-// Package okem provides a Go wrapper and unified interface around the
+// Package kems provides a Go wrapper and unified interface around the
 // implementation of KEMs.
 
-package kem // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kem"
+package kems // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kem"
 
 import (
 	"slices"
@@ -68,7 +68,7 @@ type KeyEncapsulationMechanism interface {
 Constructs an KEM scheme given a name.
 Legal values for names are:
   - "x25519" for a wrapper around the corresponding obfs4 implementation without obfuscation,
-    but suitable for elligator2 encoding provided via [okem.NewOkem] as "EtE-x25519"
+    but suitable for elligator2 encoding provided via [okems.NewOkem] as "EtE-x25519"
   - Any valid name for a KEM enabled in the open-quantum-safe library
 */
 func NewKem(kemName string) *KeyEncapsulationMechanism {

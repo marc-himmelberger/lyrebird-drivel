@@ -40,7 +40,7 @@ import (
 	pt "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/goptlib"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/drbg"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okem"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/drivelcrypto"
 )
 
@@ -68,13 +68,13 @@ func (cert *pq_obfsServerCert) String() string {
 	return strings.TrimSuffix(base64.StdEncoding.EncodeToString(cert.raw), certSuffix)
 }
 
-func (cert *pq_obfsServerCert) unpack() (*drivelcrypto.NodeID, *okem.PublicKey) {
+func (cert *pq_obfsServerCert) unpack() (*drivelcrypto.NodeID, *okems.PublicKey) {
 	if len(cert.raw) != certLength {
 		panic(fmt.Sprintf("cert length %d is invalid", len(cert.raw)))
 	}
 
 	nodeID, _ := drivelcrypto.NewNodeID(cert.raw[:drivelcrypto.NodeIDLength])
-	pubKey, _ := okem.NewPublicKey(cert.raw[drivelcrypto.NodeIDLength:])
+	pubKey, _ := okems.NewPublicKey(cert.raw[drivelcrypto.NodeIDLength:])
 
 	return nodeID, pubKey
 }
@@ -100,7 +100,7 @@ func serverCertFromState(st *pq_obfsServerState) *pq_obfsServerCert {
 
 type pq_obfsServerState struct {
 	nodeID      *drivelcrypto.NodeID
-	identityKey *okem.Keypair
+	identityKey *okems.Keypair
 	drbgSeed    *drbg.Seed
 	iatMode     int
 
@@ -155,7 +155,7 @@ func serverStateFromJSONServerState(stateDir string, js *jsonServerState) (*pq_o
 	if st.nodeID, err = drivelcrypto.NodeIDFromHex(js.NodeID); err != nil {
 		return nil, err
 	}
-	if st.identityKey, err = okem.KeypairFromHex(js.PrivateKey, js.PublicKey); err != nil {
+	if st.identityKey, err = okems.KeypairFromHex(js.PrivateKey, js.PublicKey); err != nil {
 		return nil, err
 	}
 	if st.drbgSeed, err = drbg.SeedFromHex(js.DrbgSeed); err != nil {
@@ -206,7 +206,7 @@ func newJSONServerState(stateDir string, js *jsonServerState) (err error) {
 	if st.nodeID, err = drivelcrypto.NewNodeID(rawID); err != nil {
 		return
 	}
-	if st.identityKey, err = okem.NewKeypair(); err != nil {
+	if st.identityKey, err = okems.NewKeypair(); err != nil {
 		return
 	}
 	if st.drbgSeed, err = drbg.NewSeed(); err != nil {

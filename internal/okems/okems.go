@@ -25,20 +25,19 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-// Package okem provides a Go wrapper and unified interface around the
+// Package okems provides a Go wrapper and unified interface around the
 // implementation of obfuscated KEMs as e.g. constructed in
 // https://eprint.iacr.org/2024/1086.
 // Implementation leans heavily on
 // gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/ntor/ntor.go
 
-package okem // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okem"
+package okems // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 
 import (
 	"strings"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kem"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okem/dhkem_ell2"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
 
 // An ObfuscatedKem (OKEM) defines an interface for key exchange mechanisms outputting
@@ -66,22 +65,22 @@ type ObfuscatedKem interface {
 Constructs an OKEM scheme given a name.
 Legal values for names are:
   - "EtE-<kem_name>" if "<kem_name>" is a valid name for
-    [kem.NewKem], and a corresponding [EncapsThenEncode] is implemented.
+    [kems.NewKem], and a corresponding [EncapsThenEncode] is implemented.
   - TODO Optional - "OEINC[<okem1>,<okem2>]" if "<okem1>" and "<okem2>" are both
-    valid names for [okem.NewOkem]
+    valid names for [okems.NewOkem]
 */
 func NewOkem(okemName string) *ObfuscatedKem {
 	if strings.HasPrefix(okemName, "EtE-") {
-		// "EtE-<kem_name>" if "<kem_name>" is a valid name for [kem.NewKem]
+		// "EtE-<kem_name>" if "<kem_name>" is a valid name for [kems.NewKem]
 		// Construct KEM
 		kemName := okemName[4:]
-		kem := kem.NewKem(kemName)
+		kem := kems.NewKem(kemName)
 		// Select encoder
 		// TODO: cover more implementations from https://github.com/open-quantum-safe/liboqs/blob/main/src/kem/kem.h#L42
 		var encoder EncapsThenEncode
 		switch kemName {
 		case "DHKEM":
-			encoder = &dhkem_ell2.X25519ell2Encoder{}
+			encoder = &x25519ell2.X25519ell2Encoder{}
 		//case "KEM1", "KEM2":
 		//	encoder = Kem1Encoder{}
 		default:
@@ -90,7 +89,7 @@ func NewOkem(okemName string) *ObfuscatedKem {
 		// Combine
 		return NewEncapsThenEncode(kem, encoder)
 	} else if strings.HasPrefix(okemName, "OEINC[") && strings.HasSuffix(okemName, "]") {
-		// "OEINC[<okem1>,<okem2>]" if "<okem1>" and "<okem2>" are both valid names for [okem.NewOkem]
+		// "OEINC[<okem1>,<okem2>]" if "<okem1>" and "<okem2>" are both valid names for [okems.NewOkem]
 		// Extract names
 		componentNames := okemName[6 : len(okemName)-1]
 		components := strings.Split(componentNames, ",")
