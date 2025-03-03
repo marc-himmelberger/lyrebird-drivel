@@ -31,7 +31,6 @@
 package kem // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kem"
 
 import (
-	"fmt"
 	"slices"
 
 	"github.com/open-quantum-safe/liboqs-go/oqs"
@@ -78,7 +77,7 @@ func NewKem(kemName string) *KeyEncapsulationMechanism {
 	} else if slices.Contains(oqsEnabledKEMs, kemName) {
 		// TODO
 	} else {
-		panic(fmt.Sprintf("kem: no KEM found for name: %s", kemName))
+		panic("kem: no KEM found for name: " + kemName)
 	}
 }
 

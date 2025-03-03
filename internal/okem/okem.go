@@ -34,7 +34,6 @@
 package okem // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okem"
 
 import (
-	"fmt"
 	"strings"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
@@ -86,7 +85,7 @@ func NewOkem(okemName string) *ObfuscatedKem {
 		//case "KEM1", "KEM2":
 		//	encoder = Kem1Encoder{}
 		default:
-			panic(fmt.Sprintf("no encoding mapped for KEM %s", kemDetails.Name))
+			panic("no encoding mapped for KEM " + kemDetails.Name)
 		}
 		// Combine
 		return NewEncapsThenEncode(kem, encoder)
@@ -96,7 +95,7 @@ func NewOkem(okemName string) *ObfuscatedKem {
 		componentNames := okemName[6 : len(okemName)-1]
 		components := strings.Split(componentNames, ",")
 		if len(components) != 2 {
-			panic(fmt.Sprintf("okem: invalid number of OEINC component OKEMs: %s", okemName))
+			panic("okem: invalid number of OEINC component OKEMs: " + okemName)
 		}
 		okemName1 := components[0]
 		okemName2 := components[1]
@@ -106,7 +105,7 @@ func NewOkem(okemName string) *ObfuscatedKem {
 		// Combine
 		return NewOEINC(okem1, okem2)
 	} else {
-		panic(fmt.Sprintf("okem: no OKEM construction found for name: %s", okemName))
+		panic("okem: no OKEM construction found for name: " + okemName)
 	}
 }
 
