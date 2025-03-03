@@ -88,10 +88,13 @@ func (ete *EncapsThenEncodeOKEM) KeyGen() *Keypair {
 
 // Encaps of encaps-then-encapsulate construction performs KEM encapsulation and
 // then encodes the resulting ciphertext using the encoder, not changing the shared secret
-func (ete *EncapsThenEncodeOKEM) Encaps(public PublicKey) (ObfuscatedCiphertext, SharedSecret) {
+func (ete *EncapsThenEncodeOKEM) Encaps(public PublicKey) (ObfuscatedCiphertext, SharedSecret, error) {
 	kemPublicKey := (kems.PublicKey)(public)
 
-	kemCiphertext, sharedSecret := ete.kem.Encaps(kemPublicKey)
+	kemCiphertext, sharedSecret, err := ete.kem.Encaps(kemPublicKey)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	obfCiphertext := make([]byte, ete.encoder.LengthObfuscatedCiphertext())
 	for {
@@ -102,21 +105,24 @@ func (ete *EncapsThenEncodeOKEM) Encaps(public PublicKey) (ObfuscatedCiphertext,
 			continue
 		}
 
-		return ObfuscatedCiphertext(obfCiphertext), SharedSecret(sharedSecret)
+		return ObfuscatedCiphertext(obfCiphertext), SharedSecret(sharedSecret), nil
 	}
 }
 
 // Decaps of encaps-then-encapsulate construction uses the encoder to decode the ciphertext,
 // and performs KEM decapsulation on the result
-func (ete *EncapsThenEncodeOKEM) Decaps(private PrivateKey, obfCiphertext ObfuscatedCiphertext) SharedSecret {
+func (ete *EncapsThenEncodeOKEM) Decaps(private PrivateKey, obfCiphertext ObfuscatedCiphertext) (SharedSecret, error) {
 	kemPrivateKey := (kems.PrivateKey)(private)
 
 	kemCiphertext := make([]byte, ete.kem.LengthCiphertext())
 	ete.encoder.DecodeCiphertext(kemCiphertext, obfCiphertext)
 
-	sharedSecret := ete.kem.Decaps(kemPrivateKey, kemCiphertext)
+	sharedSecret, err := ete.kem.Decaps(kemPrivateKey, kemCiphertext)
+	if err != nil {
+		return nil, err
+	}
 
-	return SharedSecret(sharedSecret)
+	return SharedSecret(sharedSecret), nil
 }
 
 var _ ObfuscatedKem = (*EncapsThenEncodeOKEM)(nil)

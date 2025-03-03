@@ -60,8 +60,8 @@ type KeyEncapsulationMechanism interface {
 	LengthSharedSecret() int
 
 	KeyGen() *Keypair
-	Encaps(PublicKey) (Ciphertext, SharedSecret)
-	Decaps(PrivateKey, Ciphertext) SharedSecret
+	Encaps(PublicKey) (Ciphertext, SharedSecret, error)
+	Decaps(PrivateKey, Ciphertext) (SharedSecret, error)
 }
 
 /*
@@ -84,16 +84,76 @@ func NewKem(kemName string) *KeyEncapsulationMechanism {
 // PublicKey is an KEM public key
 type PublicKey cryptodata.CryptoData
 
+// AssertSize checks if the public key exactly matches a given length
+func (data PublicKey) AssertSize(numBytes int) error {
+	return (cryptodata.CryptoData)(data).AssertSize(numBytes)
+}
+
+// Bytes returns a slice to the raw public key.
+func (data PublicKey) Bytes() []byte {
+	return (cryptodata.CryptoData)(data).Bytes()
+}
+
+// Hex returns the hexdecimal representation of the public key.
+func (data PublicKey) Hex() string {
+	return (cryptodata.CryptoData)(data).Hex()
+}
+
 // PrivateKey is an KEM private key
 type PrivateKey cryptodata.CryptoData
+
+// AssertSize checks if the private key exactly matches a given length
+func (data PrivateKey) AssertSize(numBytes int) error {
+	return (cryptodata.CryptoData)(data).AssertSize(numBytes)
+}
+
+// Bytes returns a slice to the raw private key.
+func (data PrivateKey) Bytes() []byte {
+	return (cryptodata.CryptoData)(data).Bytes()
+}
+
+// Hex returns the hexdecimal representation of the private key.
+func (data PrivateKey) Hex() string {
+	return (cryptodata.CryptoData)(data).Hex()
+}
 
 // Ciphertext is an KEM ciphertext.
 // This data, without knowing the private key, is indistinguishable
 // from a randomly generated ciphertext, but not from random bits.
 type Ciphertext cryptodata.CryptoData
 
+// AssertSize checks if the KEM ciphertext exactly matches a given length
+func (data Ciphertext) AssertSize(numBytes int) error {
+	return (cryptodata.CryptoData)(data).AssertSize(numBytes)
+}
+
+// Bytes returns a slice to the raw KEM ciphertext.
+func (data Ciphertext) Bytes() []byte {
+	return (cryptodata.CryptoData)(data).Bytes()
+}
+
+// Hex returns the hexdecimal representation of the KEM ciphertext.
+func (data Ciphertext) Hex() string {
+	return (cryptodata.CryptoData)(data).Hex()
+}
+
 // SharedSecret is an KEM shared secret suitable for use as a symmetric key
 type SharedSecret cryptodata.CryptoData
+
+// AssertSize checks if the KEM shared secret exactly matches a given length
+func (data SharedSecret) AssertSize(numBytes int) error {
+	return (cryptodata.CryptoData)(data).AssertSize(numBytes)
+}
+
+// Bytes returns a slice to the raw KEM shared secret.
+func (data SharedSecret) Bytes() []byte {
+	return (cryptodata.CryptoData)(data).Bytes()
+}
+
+// Hex returns the hexdecimal representation of the KEM shared secret.
+func (data SharedSecret) Hex() string {
+	return (cryptodata.CryptoData)(data).Hex()
+}
 
 // Keypair is an KEM keypair, consisting public and private keys
 type Keypair struct {
@@ -111,8 +171,31 @@ func (keypair *Keypair) Private() PrivateKey {
 	return keypair.private
 }
 
+// KeypairFromHex returns a Keypair from the raw bytes of the
+// the public and private keys. Public keys cannot always be reconstructed
+// from private keys, see https://github.com/open-quantum-safe/liboqs/issues/1802
+// This function is intended for use within a scheme construction.
+// Consumers should do serialization using the [PublicKey.Hex] methods on keys and [KeypairFromHex].
+func KeypairFromBytes(rawPrivate []byte, rawPublic []byte, lengthPrivate int, lengthPublic int) (*Keypair, error) {
+	dataPrivate, err := cryptodata.New(rawPrivate, lengthPrivate)
+	if err != nil {
+		return nil, err
+	}
+
+	dataPublic, err := cryptodata.New(rawPublic, lengthPublic)
+	if err != nil {
+		return nil, err
+	}
+
+	keypair := new(Keypair)
+	keypair.private = PrivateKey(dataPrivate)
+	keypair.public = PublicKey(dataPublic)
+
+	return keypair, nil
+}
+
 // KeypairFromHex returns a Keypair from the hexdecimal representation of the
-// the public and private key. Public keys cannot always be reconstructed
+// the public and private keys. Public keys cannot always be reconstructed
 // from private keys, see https://github.com/open-quantum-safe/liboqs/issues/1802
 // Inputs must correpsond to outputs of the corresponding Hex() functions
 func KeypairFromHex(kem KeyEncapsulationMechanism, encodedPrivate string, encodedPublic string) (*Keypair, error) {

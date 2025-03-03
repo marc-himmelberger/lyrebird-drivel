@@ -47,6 +47,7 @@ func (e CryptoDataLengthError) Error() string {
 
 type CryptoData []byte
 
+// AssertSize checks if the data exactly matches a given length
 func (data CryptoData) AssertSize(numBytes int) error {
 	if len(data) != numBytes {
 		return CryptoDataLengthError(len(data))
