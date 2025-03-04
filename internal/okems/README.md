@@ -9,4 +9,4 @@ open-quantum-safe implementations. An encoding defined here takes care
 of mapping between obfuscated public keys and ciphertexts and the
 corresponding values used for the underlying KEM operations.
 
-Consumers such as the pq_obfs transport should only interface with OKEMs.
+Consumers such as the drivel transport should only interface with OKEMs.

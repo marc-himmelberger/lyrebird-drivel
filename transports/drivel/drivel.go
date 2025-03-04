@@ -25,9 +25,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-// Package pq_obfs provides an implementation of the pq_obfs
+// package drivel provides an implementation of the drivel
 // obfuscation protocol constructed in https://eprint.iacr.org/2024/1086.
-package pq_obfs
+package drivel
 
 import (
 	"bytes"
@@ -50,12 +50,12 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/base"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/drivelcrypto"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/framing"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/drivelcrypto"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/framing"
 )
 
 const (
-	transportName = "pq_obfs"
+	transportName = "drivel"
 
 	nodeIDArg     = "node-id"
 	publicKeyArg  = "public-key"
@@ -64,7 +64,7 @@ const (
 	iatArg        = "iat-mode"
 	certArg       = "cert"
 
-	biasCmdArg = "pq_obfs-distBias"
+	biasCmdArg = "drivel-distBias"
 
 	seedLength             = drbg.SeedLength
 	headerLength           = framing.FrameOverhead + packetOverhead
@@ -96,7 +96,7 @@ var kemScheme kems.KeyEncapsulationMechanism
 // okem controls what OKEM is used to instantiate Drivel.
 var okemScheme okems.ObfuscatedKem
 
-type pq_obfsClientArgs struct {
+type drivelClientArgs struct {
 	okem okems.ObfuscatedKem
 	kem  kems.KeyEncapsulationMechanism
 
@@ -105,21 +105,21 @@ type pq_obfsClientArgs struct {
 	iatMode   int
 }
 
-// Transport is the pq_obfs implementation of the base.Transport interface.
+// Transport is the drivel implementation of the base.Transport interface.
 type Transport struct{}
 
-// Name returns the name of the pq_obfs transport protocol.
+// Name returns the name of the drivel transport protocol.
 func (t *Transport) Name() string {
 	return transportName
 }
 
-// ClientFactory returns a new pq_obfsClientFactory instance.
+// ClientFactory returns a new drivelClientFactory instance.
 func (t *Transport) ClientFactory(stateDir string) (base.ClientFactory, error) {
-	cf := &pq_obfsClientFactory{transport: t}
+	cf := &drivelClientFactory{transport: t}
 	return cf, nil
 }
 
-// ServerFactory returns a new pq_obfsServerFactory instance.
+// ServerFactory returns a new drivelServerFactory instance.
 func (t *Transport) ServerFactory(stateDir string, args *pt.Args) (base.ServerFactory, error) {
 	st, err := serverStateFromArgs(stateDir, args)
 	if err != nil {
@@ -154,19 +154,19 @@ func (t *Transport) ServerFactory(stateDir string, args *pt.Args) (base.ServerFa
 	}
 	rng := rand.New(drbg)
 
-	sf := &pq_obfsServerFactory{okemScheme, kemScheme, t, &ptArgs, st.nodeID, st.identityKey, st.drbgSeed, iatSeed, st.iatMode, filter, rng.Intn(maxCloseDelay)}
+	sf := &drivelServerFactory{okemScheme, kemScheme, t, &ptArgs, st.nodeID, st.identityKey, st.drbgSeed, iatSeed, st.iatMode, filter, rng.Intn(maxCloseDelay)}
 	return sf, nil
 }
 
-type pq_obfsClientFactory struct {
+type drivelClientFactory struct {
 	transport base.Transport
 }
 
-func (cf *pq_obfsClientFactory) Transport() base.Transport {
+func (cf *drivelClientFactory) Transport() base.Transport {
 	return cf.transport
 }
 
-func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
+func (cf *drivelClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 	var nodeID *drivelcrypto.NodeID
 	var publicKey okems.PublicKey
 
@@ -212,15 +212,15 @@ func (cf *pq_obfsClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 		return nil, fmt.Errorf("invalid iat-mode '%d'", iatMode)
 	}
 
-	return &pq_obfsClientArgs{okemScheme, kemScheme, nodeID, publicKey, iatMode}, nil
+	return &drivelClientArgs{okemScheme, kemScheme, nodeID, publicKey, iatMode}, nil
 }
 
-func (cf *pq_obfsClientFactory) Dial(network, addr string, dialFn base.DialFunc, args interface{}) (net.Conn, error) {
+func (cf *drivelClientFactory) Dial(network, addr string, dialFn base.DialFunc, args interface{}) (net.Conn, error) {
 
 	// TODO args are passed back into Dial here! dialFn is direct or uses some regular Proxy server
 
 	// Validate args before bothering to open connection.
-	ca, ok := args.(*pq_obfsClientArgs)
+	ca, ok := args.(*drivelClientArgs)
 	if !ok {
 		return nil, fmt.Errorf("invalid argument type for args")
 	}
@@ -229,7 +229,7 @@ func (cf *pq_obfsClientFactory) Dial(network, addr string, dialFn base.DialFunc,
 		return nil, err
 	}
 	dialConn := conn
-	if conn, err = newPq_obfsClientConn(conn, ca); err != nil {
+	if conn, err = newDrivelClientConn(conn, ca); err != nil {
 		dialConn.Close()
 		return nil, err
 	}
@@ -237,9 +237,9 @@ func (cf *pq_obfsClientFactory) Dial(network, addr string, dialFn base.DialFunc,
 }
 
 // Not yet implemented
-func (cf *pq_obfsClientFactory) OnEvent(f func(base.TransportEvent)) {}
+func (cf *drivelClientFactory) OnEvent(f func(base.TransportEvent)) {}
 
-type pq_obfsServerFactory struct {
+type drivelServerFactory struct {
 	okem okems.ObfuscatedKem
 	kem  kems.KeyEncapsulationMechanism
 
@@ -256,16 +256,16 @@ type pq_obfsServerFactory struct {
 	closeDelay int
 }
 
-func (sf *pq_obfsServerFactory) Transport() base.Transport {
+func (sf *drivelServerFactory) Transport() base.Transport {
 	return sf.transport
 }
 
-func (sf *pq_obfsServerFactory) Args() *pt.Args {
+func (sf *drivelServerFactory) Args() *pt.Args {
 	return sf.args
 }
 
-func (sf *pq_obfsServerFactory) WrapConn(conn net.Conn) (net.Conn, error) {
-	// Not much point in having a separate newPq_obfsServerConn routine when
+func (sf *drivelServerFactory) WrapConn(conn net.Conn) (net.Conn, error) {
+	// Not much point in having a separate newDrivelServerConn routine when
 	// wrapping requires using values from the factory instance.
 
 	lenDist := probdist.New(sf.lenSeed, 0, framing.MaximumSegmentLength, biasedDist)
@@ -274,7 +274,7 @@ func (sf *pq_obfsServerFactory) WrapConn(conn net.Conn) (net.Conn, error) {
 		iatDist = probdist.New(sf.iatSeed, 0, maxIATDelay, biasedDist)
 	}
 
-	c := &pq_obfsConn{conn, true, lenDist, iatDist, sf.iatMode, bytes.NewBuffer(nil), bytes.NewBuffer(nil), make([]byte, consumeReadSize), nil, nil}
+	c := &drivelConn{conn, true, lenDist, iatDist, sf.iatMode, bytes.NewBuffer(nil), bytes.NewBuffer(nil), make([]byte, consumeReadSize), nil, nil}
 
 	startTime := time.Now()
 
@@ -286,7 +286,7 @@ func (sf *pq_obfsServerFactory) WrapConn(conn net.Conn) (net.Conn, error) {
 	return c, nil
 }
 
-type pq_obfsConn struct {
+type drivelConn struct {
 	net.Conn
 
 	isServer bool
@@ -303,7 +303,7 @@ type pq_obfsConn struct {
 	decoder *framing.Decoder
 }
 
-func newPq_obfsClientConn(conn net.Conn, args *pq_obfsClientArgs) (c *pq_obfsConn, err error) {
+func newDrivelClientConn(conn net.Conn, args *drivelClientArgs) (c *drivelConn, err error) {
 	// TODO this sets up a message length distribution!
 
 	// Generate the initial protocol polymorphism distribution(s).
@@ -323,7 +323,7 @@ func newPq_obfsClientConn(conn net.Conn, args *pq_obfsClientArgs) (c *pq_obfsCon
 	}
 
 	// Allocate the client structure.
-	c = &pq_obfsConn{conn, false, lenDist, iatDist, args.iatMode, bytes.NewBuffer(nil), bytes.NewBuffer(nil), make([]byte, consumeReadSize), nil, nil}
+	c = &drivelConn{conn, false, lenDist, iatDist, args.iatMode, bytes.NewBuffer(nil), bytes.NewBuffer(nil), make([]byte, consumeReadSize), nil, nil}
 
 	// Start the handshake timeout.
 	deadline := time.Now().Add(clientHandshakeTimeout)
@@ -343,7 +343,7 @@ func newPq_obfsClientConn(conn net.Conn, args *pq_obfsClientArgs) (c *pq_obfsCon
 	return
 }
 
-func (conn *pq_obfsConn) clientHandshake(args *pq_obfsClientArgs) error {
+func (conn *drivelConn) clientHandshake(args *drivelClientArgs) error {
 	if conn.isServer {
 		return fmt.Errorf("clientHandshake called on server connection")
 	}
@@ -391,7 +391,7 @@ func (conn *pq_obfsConn) clientHandshake(args *pq_obfsClientArgs) error {
 	}
 }
 
-func (conn *pq_obfsConn) serverHandshake(sf *pq_obfsServerFactory) error {
+func (conn *drivelConn) serverHandshake(sf *drivelServerFactory) error {
 	if !conn.isServer {
 		return fmt.Errorf("serverHandshake called on client connection")
 	}
@@ -463,7 +463,7 @@ func (conn *pq_obfsConn) serverHandshake(sf *pq_obfsServerFactory) error {
 	return nil
 }
 
-func (conn *pq_obfsConn) Read(b []byte) (n int, err error) {
+func (conn *drivelConn) Read(b []byte) (n int, err error) {
 	// If there is no payload from the previous Read() calls, consume data off
 	// the network.  Not all data received is guaranteed to be usable payload,
 	// so do this in a loop till data is present or an error occurs.
@@ -494,7 +494,7 @@ func (conn *pq_obfsConn) Read(b []byte) (n int, err error) {
 	return
 }
 
-func (conn *pq_obfsConn) Write(b []byte) (n int, err error) {
+func (conn *drivelConn) Write(b []byte) (n int, err error) {
 	chopBuf := bytes.NewBuffer(b)
 	var payload [maxPacketPayloadLength]byte
 	var frameBuf bytes.Buffer
@@ -586,15 +586,15 @@ func (conn *pq_obfsConn) Write(b []byte) (n int, err error) {
 	return
 }
 
-func (conn *pq_obfsConn) SetDeadline(t time.Time) error {
+func (conn *drivelConn) SetDeadline(t time.Time) error {
 	return syscall.ENOTSUP
 }
 
-func (conn *pq_obfsConn) SetWriteDeadline(t time.Time) error {
+func (conn *drivelConn) SetWriteDeadline(t time.Time) error {
 	return syscall.ENOTSUP
 }
 
-func (conn *pq_obfsConn) closeAfterDelay(sf *pq_obfsServerFactory, startTime time.Time) {
+func (conn *drivelConn) closeAfterDelay(sf *drivelServerFactory, startTime time.Time) {
 	// I-it's not like I w-wanna handshake with you or anything.  B-b-baka!
 	defer conn.Conn.Close()
 
@@ -613,7 +613,7 @@ func (conn *pq_obfsConn) closeAfterDelay(sf *pq_obfsServerFactory, startTime tim
 	_, _ = io.Copy(ioutil.Discard, conn.Conn)
 }
 
-func (conn *pq_obfsConn) padBurst(burst *bytes.Buffer, toPadTo int) (err error) {
+func (conn *drivelConn) padBurst(burst *bytes.Buffer, toPadTo int) (err error) {
 	tailLen := burst.Len() % framing.MaximumSegmentLength
 
 	padLen := 0
@@ -646,13 +646,13 @@ func (conn *pq_obfsConn) padBurst(burst *bytes.Buffer, toPadTo int) (err error) 
 }
 
 func init() {
-	flag.BoolVar(&biasedDist, biasCmdArg, false, "Enable pq_obfs using ScrambleSuit style table generation")
+	flag.BoolVar(&biasedDist, biasCmdArg, false, "Enable drivel using ScrambleSuit style table generation")
 
 	kemScheme = cryptofactory.NewKem(kemName)
 	okemScheme = cryptofactory.NewOkem(okemName)
 }
 
-var _ base.ClientFactory = (*pq_obfsClientFactory)(nil)
-var _ base.ServerFactory = (*pq_obfsServerFactory)(nil)
+var _ base.ClientFactory = (*drivelClientFactory)(nil)
+var _ base.ServerFactory = (*drivelServerFactory)(nil)
 var _ base.Transport = (*Transport)(nil)
-var _ net.Conn = (*pq_obfsConn)(nil)
+var _ net.Conn = (*drivelConn)(nil)

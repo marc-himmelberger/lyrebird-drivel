@@ -30,7 +30,7 @@
 // TODO: <link hybrid paper>.
 // It also supports using OKEMs to transform the public keys and ciphertexts sent
 // over the wire to a form that is indistinguishable from random strings.
-package drivelcrypto // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/drivelcrypto"
+package drivelcrypto // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/drivelcrypto"
 
 import (
 	"bytes"

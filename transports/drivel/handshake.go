@@ -25,7 +25,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-package pq_obfs
+package drivel
 
 import (
 	"bytes"
@@ -42,8 +42,8 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/drivelcrypto"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/framing"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/drivelcrypto"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/framing"
 )
 
 const (
@@ -63,17 +63,17 @@ const (
 	inlineSeedFrameLength = framing.FrameOverhead + packetOverhead + seedPacketPayloadLength
 )
 
-// ErrMarkNotFoundYet is the error returned when the pq_obfs handshake is
+// ErrMarkNotFoundYet is the error returned when the drivel handshake is
 // incomplete and requires more data to continue.  This error is non-fatal and
 // is the equivalent to EAGAIN/EWOULDBLOCK.
 var ErrMarkNotFoundYet = errors.New("handshake: M_[C,S] not found yet")
 
-// ErrInvalidHandshake is the error returned when the pq_obfs handshake fails due
+// ErrInvalidHandshake is the error returned when the drivel handshake fails due
 // to the peer not sending the correct mark.  This error is fatal and the
 // connection MUST be dropped.
 var ErrInvalidHandshake = errors.New("handshake: Failed to find M_[C,S]")
 
-// ErrReplayedHandshake is the error returned when the pq_obfs handshake fails
+// ErrReplayedHandshake is the error returned when the drivel handshake fails
 // due it being replayed.  This error is fatal and the connection MUST be
 // dropped.
 var ErrReplayedHandshake = errors.New("handshake: Replay detected")

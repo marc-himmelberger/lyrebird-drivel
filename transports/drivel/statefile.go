@@ -25,7 +25,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-package pq_obfs
+package drivel
 
 import (
 	"encoding/base64"
@@ -41,12 +41,12 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/drbg"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/drivelcrypto"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/drivelcrypto"
 )
 
 const (
-	stateFile  = "pq_obfs_state.json"
-	bridgeFile = "pq_obfs_bridgeline.txt"
+	stateFile  = "drivel_state.json"
+	bridgeFile = "drivel_bridgeline.txt"
 
 	certSuffix = "=="
 	certLength = drivelcrypto.NodeIDLength + drivelcrypto.PublicKeyLength
@@ -60,15 +60,15 @@ type jsonServerState struct {
 	IATMode    int    `json:"iat-mode"`
 }
 
-type pq_obfsServerCert struct {
+type drivelServerCert struct {
 	raw []byte
 }
 
-func (cert *pq_obfsServerCert) String() string {
+func (cert *drivelServerCert) String() string {
 	return strings.TrimSuffix(base64.StdEncoding.EncodeToString(cert.raw), certSuffix)
 }
 
-func (cert *pq_obfsServerCert) unpack() (*drivelcrypto.NodeID, *okems.PublicKey) {
+func (cert *drivelServerCert) unpack() (*drivelcrypto.NodeID, *okems.PublicKey) {
 	if len(cert.raw) != certLength {
 		panic(fmt.Sprintf("cert length %d is invalid", len(cert.raw)))
 	}
@@ -79,7 +79,7 @@ func (cert *pq_obfsServerCert) unpack() (*drivelcrypto.NodeID, *okems.PublicKey)
 	return nodeID, pubKey
 }
 
-func serverCertFromString(encoded string) (*pq_obfsServerCert, error) {
+func serverCertFromString(encoded string) (*drivelServerCert, error) {
 	decoded, err := base64.StdEncoding.DecodeString(encoded + certSuffix)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode cert: %s", err)
@@ -89,29 +89,29 @@ func serverCertFromString(encoded string) (*pq_obfsServerCert, error) {
 		return nil, fmt.Errorf("cert length %d is invalid", len(decoded))
 	}
 
-	return &pq_obfsServerCert{raw: decoded}, nil
+	return &drivelServerCert{raw: decoded}, nil
 }
 
-func serverCertFromState(st *pq_obfsServerState) *pq_obfsServerCert {
-	cert := new(pq_obfsServerCert)
+func serverCertFromState(st *drivelServerState) *drivelServerCert {
+	cert := new(drivelServerCert)
 	cert.raw = append(st.nodeID.Bytes()[:], st.identityKey.Public().Bytes()...)
 	return cert
 }
 
-type pq_obfsServerState struct {
+type drivelServerState struct {
 	nodeID      *drivelcrypto.NodeID
 	identityKey *okems.Keypair
 	drbgSeed    *drbg.Seed
 	iatMode     int
 
-	cert *pq_obfsServerCert
+	cert *drivelServerCert
 }
 
-func (st *pq_obfsServerState) clientString() string {
+func (st *drivelServerState) clientString() string {
 	return fmt.Sprintf("%s=%s %s=%d", certArg, st.cert, iatArg, st.iatMode)
 }
 
-func serverStateFromArgs(stateDir string, args *pt.Args) (*pq_obfsServerState, error) {
+func serverStateFromArgs(stateDir string, args *pt.Args) (*drivelServerState, error) {
 	var js jsonServerState
 	var nodeIDOk, privKeyOk, seedOk bool
 
@@ -148,10 +148,10 @@ func serverStateFromArgs(stateDir string, args *pt.Args) (*pq_obfsServerState, e
 	return serverStateFromJSONServerState(stateDir, &js)
 }
 
-func serverStateFromJSONServerState(stateDir string, js *jsonServerState) (*pq_obfsServerState, error) {
+func serverStateFromJSONServerState(stateDir string, js *jsonServerState) (*drivelServerState, error) {
 	var err error
 
-	st := new(pq_obfsServerState)
+	st := new(drivelServerState)
 	if st.nodeID, err = drivelcrypto.NodeIDFromHex(js.NodeID); err != nil {
 		return nil, err
 	}
@@ -198,7 +198,7 @@ func jsonServerStateFromFile(stateDir string, js *jsonServerState) error {
 func newJSONServerState(stateDir string, js *jsonServerState) (err error) {
 	// Generate everything a server needs, using the cryptographic PRNG.
 	// TODO this generates the initial identity!
-	var st pq_obfsServerState
+	var st drivelServerState
 	rawID := make([]byte, drivelcrypto.NodeIDLength)
 	if err = csrand.Bytes(rawID); err != nil {
 		return
@@ -237,8 +237,8 @@ func writeJSONServerState(stateDir string, js *jsonServerState) error {
 	return nil
 }
 
-func newBridgeFile(stateDir string, st *pq_obfsServerState) error {
-	const prefix = "# pq_obfs torrc client bridge line\n" +
+func newBridgeFile(stateDir string, st *drivelServerState) error {
+	const prefix = "# drivel torrc client bridge line\n" +
 		"#\n" +
 		"# This file is an automatically generated bridge line based on\n" +
 		"# the current lyrebird configuration.  EDITING IT WILL HAVE NO\n" +
@@ -246,11 +246,11 @@ func newBridgeFile(stateDir string, st *pq_obfsServerState) error {
 		"#\n" +
 		"# Before distributing this Bridge, edit the placeholder fields\n" +
 		"# to contain the actual values:\n" +
-		"#  <IP ADDRESS>  - The public IP address of your pq_obfs bridge.\n" +
-		"#  <PORT>        - The TCP/IP port of your pq_obfs bridge.\n" +
+		"#  <IP ADDRESS>  - The public IP address of your drivel bridge.\n" +
+		"#  <PORT>        - The TCP/IP port of your drivel bridge.\n" +
 		"#  <FINGERPRINT> - The bridge's fingerprint.\n\n"
 
-	bridgeLine := fmt.Sprintf("Bridge pq_obfs <IP ADDRESS>:<PORT> <FINGERPRINT> %s\n",
+	bridgeLine := fmt.Sprintf("Bridge drivel <IP ADDRESS>:<PORT> <FINGERPRINT> %s\n",
 		st.clientString())
 
 	tmp := []byte(prefix + bridgeLine)

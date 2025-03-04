@@ -25,7 +25,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-package pq_obfs
+package drivel
 
 import (
 	"crypto/sha256"
@@ -34,7 +34,7 @@ import (
 	"io"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/drbg"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/pq_obfs/framing"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/framing"
 )
 
 const (
@@ -69,7 +69,7 @@ func (e InvalidPayloadLengthError) Error() string {
 
 var zeroPadBytes [maxPacketPaddingLength]byte
 
-func (conn *pq_obfsConn) makePacket(w io.Writer, pktType uint8, data []byte, padLen uint16) error {
+func (conn *drivelConn) makePacket(w io.Writer, pktType uint8, data []byte, padLen uint16) error {
 	var pkt [framing.MaximumFramePayloadLength]byte
 
 	if len(data)+int(padLen) > maxPacketPayloadLength {
@@ -108,7 +108,7 @@ func (conn *pq_obfsConn) makePacket(w io.Writer, pktType uint8, data []byte, pad
 	return nil
 }
 
-func (conn *pq_obfsConn) readPackets() (err error) {
+func (conn *drivelConn) readPackets() (err error) {
 	// Attempt to read off the network.
 	rdLen, rdErr := conn.Conn.Read(conn.readBuffer)
 	conn.receiveBuffer.Write(conn.readBuffer[:rdLen])

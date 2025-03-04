@@ -25,7 +25,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-// Package framing implements the pq_obfs link framing and cryptography.
+// Package framing implements the drivel link framing and cryptography.
 //
 // The Encoder/Decoder shared secret format is:
 //
