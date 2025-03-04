@@ -43,11 +43,11 @@ const (
 
 // ### The following implement KEM operations for x25519 ###
 // say the peer's KeyGen() generated B,b
-// a) Encap(B) generates a new obfuscated keypair X',x and outputs c=X', K=x.B
-// b) Decap(b,X') then decodes X' to X and performs b.X
+// a) Encap(B) generates a new keypair X,x and outputs c=X, K=x.B
+// b) Decap(b,X) then sets K=b.X
 // This is analogous to what is done for DHKEM in [RFC 9180], but differs in the generation of shared secret:
 //
-// [RFC 9180] computes context = X' | B
+// [RFC 9180] computes context = X | B
 // and subsequently uses ExtractAndExpand(x.B, context) as its secret.
 //
 // This code uses x.B as a secret directly.
@@ -66,7 +66,7 @@ func (kem *X25519KEM) LengthPrivateKey() int {
 	return PrivateKeyLength
 }
 func (kem *X25519KEM) LengthCiphertext() int {
-	return RepresentativeLength
+	return PublicKeyLength
 }
 func (kem *X25519KEM) LengthSharedSecret() int {
 	return SharedSecretLength
@@ -91,7 +91,8 @@ func (kem *X25519KEM) KeyGen() *kems.Keypair {
 		}
 		digest := sha512.Sum512(privateBuf[:])
 		copy(privateBuf[:], digest[:])
-		// XXX: Optionally make public key one byte larger, and add digest[63]. This would yield deterministic representatitves.
+		// XXX: Optionally make public key one byte larger, and add digest[63].
+		// This would allow the encoder to yield deterministic representatitves. Do we want that?
 		// Alternative: new csrand call during Encode
 
 		// Apply the Elligator transform.  This fails ~50% of the time.
@@ -132,21 +133,21 @@ func (kem *X25519KEM) Encaps(public kems.PublicKey) (kems.Ciphertext, kems.Share
 }
 
 // Pieced together from /lyrebird/common/ntor/ntor.go
-// Takes an unobfuscated private key plus an obfuscated public key
-// (in place of obfuscated ciphertext), and gives out a shared secret
-// as the result of a point multiplication after decoding the received public key
+// Takes a private key plus the peer's public key (in place of the ciphertext),
+// and gives out a shared secret as the result of a point multiplication
 func (kem *X25519KEM) Decaps(private kems.PrivateKey, ciphertext kems.Ciphertext) (kems.SharedSecret, error) {
 	var publicBuf [PublicKeyLength]byte
 	var sharedSecretArr [SharedSecretLength]byte
 
-	pkArr := (*[RepresentativeLength]byte)(ciphertext.Bytes())
+	pkArr := (*[PublicKeyLength]byte)(ciphertext.Bytes())
 	privArr := (*[PrivateKeyLength]byte)(private.Bytes())
 
+	// Ensure canonical representation before using ScalarMult
 	var u field.Element
 	if _, err := u.SetBytes(pkArr[:]); err != nil {
-		// Panic is fine, the only way this fails is if the representative
+		// Panic is fine, the only way this fails is if the public key
 		// is not 32-bytes.
-		panic("internal/x25519: failed to deserialize representative: " + err.Error())
+		panic("internal/x25519: failed to deserialize public key: " + err.Error())
 	}
 	copy(publicBuf[:], u.Bytes())
 
