@@ -40,6 +40,7 @@ import (
 	pt "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/goptlib"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/drbg"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/drivelcrypto"
 )
@@ -68,15 +69,21 @@ func (cert *drivelServerCert) String() string {
 	return strings.TrimSuffix(base64.StdEncoding.EncodeToString(cert.raw), certSuffix)
 }
 
-func (cert *drivelServerCert) unpack() (*drivelcrypto.NodeID, *okems.PublicKey) {
+func (cert *drivelServerCert) unpack(okem okems.ObfuscatedKem) (*drivelcrypto.NodeID, okems.PublicKey) {
 	if len(cert.raw) != certLength {
 		panic(fmt.Sprintf("cert length %d is invalid", len(cert.raw)))
 	}
 
-	nodeID, _ := drivelcrypto.NewNodeID(cert.raw[:drivelcrypto.NodeIDLength])
-	pubKey, _ := okems.NewPublicKey(cert.raw[drivelcrypto.NodeIDLength:])
+	nodeID, err := drivelcrypto.NewNodeID(cert.raw[:drivelcrypto.NodeIDLength])
+	if err != nil {
+		panic("statefile: unable to construct node ID from bytes: " + err.Error())
+	}
+	pub, err := cryptodata.New(cert.raw[drivelcrypto.NodeIDLength:], okem.LengthPublicKey())
+	if err != nil {
+		panic("statefile: unable to construct public key from bytes: " + err.Error())
+	}
 
-	return nodeID, pubKey
+	return nodeID, okems.PublicKey(pub)
 }
 
 func serverCertFromString(encoded string) (*drivelServerCert, error) {
@@ -111,7 +118,7 @@ func (st *drivelServerState) clientString() string {
 	return fmt.Sprintf("%s=%s %s=%d", certArg, st.cert, iatArg, st.iatMode)
 }
 
-func serverStateFromArgs(stateDir string, args *pt.Args) (*drivelServerState, error) {
+func serverStateFromArgs(stateDir string, args *pt.Args, okem okems.ObfuscatedKem) (*drivelServerState, error) {
 	var js jsonServerState
 	var nodeIDOk, privKeyOk, seedOk bool
 
@@ -123,7 +130,7 @@ func serverStateFromArgs(stateDir string, args *pt.Args) (*drivelServerState, er
 	// Either a private key, node id, and seed are ALL specified, or
 	// they should be loaded from the state file.
 	if !privKeyOk && !nodeIDOk && !seedOk {
-		if err := jsonServerStateFromFile(stateDir, &js); err != nil {
+		if err := jsonServerStateFromFile(stateDir, &js, okem); err != nil {
 			return nil, err
 		}
 	} else if !privKeyOk {
@@ -145,17 +152,17 @@ func serverStateFromArgs(stateDir string, args *pt.Args) (*drivelServerState, er
 		js.IATMode = iatMode
 	}
 
-	return serverStateFromJSONServerState(stateDir, &js)
+	return serverStateFromJSONServerState(stateDir, &js, okem)
 }
 
-func serverStateFromJSONServerState(stateDir string, js *jsonServerState) (*drivelServerState, error) {
+func serverStateFromJSONServerState(stateDir string, js *jsonServerState, okem okems.ObfuscatedKem) (*drivelServerState, error) {
 	var err error
 
 	st := new(drivelServerState)
 	if st.nodeID, err = drivelcrypto.NodeIDFromHex(js.NodeID); err != nil {
 		return nil, err
 	}
-	if st.identityKey, err = okems.KeypairFromHex(js.PrivateKey, js.PublicKey); err != nil {
+	if st.identityKey, err = okems.KeypairFromHex(okem, js.PrivateKey, js.PublicKey); err != nil {
 		return nil, err
 	}
 	if st.drbgSeed, err = drbg.SeedFromHex(js.DrbgSeed); err != nil {
@@ -176,12 +183,12 @@ func serverStateFromJSONServerState(stateDir string, js *jsonServerState) (*driv
 	return st, writeJSONServerState(stateDir, js)
 }
 
-func jsonServerStateFromFile(stateDir string, js *jsonServerState) error {
+func jsonServerStateFromFile(stateDir string, js *jsonServerState, okem okems.ObfuscatedKem) error {
 	fPath := path.Join(stateDir, stateFile)
 	f, err := ioutil.ReadFile(fPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			if err = newJSONServerState(stateDir, js); err == nil {
+			if err = newJSONServerState(stateDir, js, okem); err == nil {
 				return nil
 			}
 		}
@@ -195,9 +202,9 @@ func jsonServerStateFromFile(stateDir string, js *jsonServerState) error {
 	return nil
 }
 
-func newJSONServerState(stateDir string, js *jsonServerState) (err error) {
+func newJSONServerState(stateDir string, js *jsonServerState, okem okems.ObfuscatedKem) (err error) {
 	// Generate everything a server needs, using the cryptographic PRNG.
-	// TODO this generates the initial identity!
+	// INFO this generates the initial identity!
 	var st drivelServerState
 	rawID := make([]byte, drivelcrypto.NodeIDLength)
 	if err = csrand.Bytes(rawID); err != nil {
@@ -206,7 +213,7 @@ func newJSONServerState(stateDir string, js *jsonServerState) (err error) {
 	if st.nodeID, err = drivelcrypto.NewNodeID(rawID); err != nil {
 		return
 	}
-	if st.identityKey, err = okems.NewKeypair(); err != nil {
+	if st.identityKey = okem.KeyGen(); err != nil {
 		return
 	}
 	if st.drbgSeed, err = drbg.NewSeed(); err != nil {

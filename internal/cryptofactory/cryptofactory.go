@@ -72,7 +72,7 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 		// TODO: cover more implementations from https://github.com/open-quantum-safe/liboqs/blob/main/src/kem/kem.h#L42
 		var encoder EncapsThenEncode
 		switch kemName {
-		case "DHKEM":
+		case "x25519":
 			encoder = &x25519ell2.Elligator2Encoder{}
 		//case "KEM1", "KEM2":
 		//	encoder = Kem1Encoder{}

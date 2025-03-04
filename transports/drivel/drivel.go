@@ -121,7 +121,7 @@ func (t *Transport) ClientFactory(stateDir string) (base.ClientFactory, error) {
 
 // ServerFactory returns a new drivelServerFactory instance.
 func (t *Transport) ServerFactory(stateDir string, args *pt.Args) (base.ServerFactory, error) {
-	st, err := serverStateFromArgs(stateDir, args)
+	st, err := serverStateFromArgs(stateDir, args, okemScheme)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func (cf *drivelClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 	var nodeID *drivelcrypto.NodeID
 	var publicKey okems.PublicKey
 
-	// TODO this receives B, NodeID!
+	// INFO this receives B, NodeID!
 
 	// The "new" (version >= 0.0.3) bridge lines use a unified "cert" argument
 	// for the Node ID and Public Key.
@@ -180,7 +180,7 @@ func (cf *drivelClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		nodeID, publicKey = cert.unpack()
+		nodeID, publicKey = cert.unpack(okemScheme)
 	} else {
 		// The "old" style (version <= 0.0.2) bridge lines use separate Node ID
 		// and Public Key arguments in Base16 encoding and are a UX disaster.
@@ -217,7 +217,7 @@ func (cf *drivelClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 
 func (cf *drivelClientFactory) Dial(network, addr string, dialFn base.DialFunc, args interface{}) (net.Conn, error) {
 
-	// TODO args are passed back into Dial here! dialFn is direct or uses some regular Proxy server
+	// INFO args are passed back into Dial here! dialFn is direct or uses some regular Proxy server
 
 	// Validate args before bothering to open connection.
 	ca, ok := args.(*drivelClientArgs)
@@ -304,7 +304,7 @@ type drivelConn struct {
 }
 
 func newDrivelClientConn(conn net.Conn, args *drivelClientArgs) (c *drivelConn, err error) {
-	// TODO this sets up a message length distribution!
+	// INFO this sets up a message length distribution!
 
 	// Generate the initial protocol polymorphism distribution(s).
 	var seed *drbg.Seed
@@ -348,7 +348,7 @@ func (conn *drivelConn) clientHandshake(args *drivelClientArgs) error {
 		return fmt.Errorf("clientHandshake called on server connection")
 	}
 
-	// TODO this sends the first client message!
+	// INFO this sends the first client message!
 
 	// Generate a new keypair
 	sessionKey := args.kem.KeyGen()
