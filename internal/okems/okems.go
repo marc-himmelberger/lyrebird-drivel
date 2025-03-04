@@ -81,7 +81,7 @@ func (data PublicKey) Hex() string {
 func PublicKeyFromHex(okem ObfuscatedKem, encodedPublic string) (PublicKey, error) {
 	dataPublic, err := cryptodata.NewFromHex(encodedPublic, okem.LengthPublicKey())
 	if err != nil {
-		return nil, err
+		return PublicKey(cryptodata.Nil), err
 	}
 
 	return PublicKey(dataPublic), nil

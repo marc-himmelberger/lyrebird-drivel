@@ -27,6 +27,7 @@ import (
 	"golang.org/x/crypto/curve25519"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
 
@@ -118,10 +119,20 @@ func (kem *X25519KEM) Encaps(public kems.PublicKey) (kems.Ciphertext, kems.Share
 	notOk := constantTimeIsZero(sharedSecretArr[:])
 	if notOk != 0 {
 		// bad server public keys can provoke this
-		return nil, nil, errors.New("x25519: Encaps failure: server public keys was low-order, secret would not be secure")
+		return kems.Ciphertext(cryptodata.Nil), kems.SharedSecret(cryptodata.Nil), errors.New("x25519: Encaps failure: server public keys was low-order, secret would not be secure")
 	}
 
-	return keypair.Public().Bytes(), sharedSecretArr[:], nil
+	kemCiphertext, err := cryptodata.New(keypair.Public().Bytes(), PublicKeyLength)
+	if err != nil {
+		return kems.Ciphertext(cryptodata.Nil), kems.SharedSecret(cryptodata.Nil), err
+	}
+
+	sharedSecret, err := cryptodata.New(sharedSecretArr[:], SharedSecretLength)
+	if err != nil {
+		return kems.Ciphertext(cryptodata.Nil), kems.SharedSecret(cryptodata.Nil), err
+	}
+
+	return kems.Ciphertext(kemCiphertext), kems.SharedSecret(sharedSecret), nil
 }
 
 // Pieced together from /lyrebird/common/ntor/ntor.go
@@ -148,10 +159,15 @@ func (kem *X25519KEM) Decaps(private kems.PrivateKey, ciphertext kems.Ciphertext
 	notOk := constantTimeIsZero(sharedSecretArr[:])
 	if notOk != 0 {
 		// bad server public keys can provoke this
-		return nil, errors.New("x25519: Encaps failure: server public keys was low-order, secret would not be secure")
+		return kems.SharedSecret(cryptodata.Nil), errors.New("x25519: Encaps failure: server public keys was low-order, secret would not be secure")
 	}
 
-	return sharedSecretArr[:], nil
+	sharedSecret, err := cryptodata.New(sharedSecretArr[:], SharedSecretLength)
+	if err != nil {
+		return kems.SharedSecret(cryptodata.Nil), err
+	}
+
+	return kems.SharedSecret(sharedSecret), nil
 }
 
 func constantTimeIsZero(x []byte) int {

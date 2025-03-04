@@ -32,6 +32,7 @@ package cryptofactory
 
 import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/log"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 )
@@ -93,16 +94,21 @@ func (ete *EncapsThenEncodeOKEM) Encaps(public okems.PublicKey) (okems.Obfuscate
 
 	kemCiphertext, sharedSecret, err := ete.kem.Encaps(kemPublicKey)
 	if err != nil {
-		return nil, nil, err
+		return okems.ObfuscatedCiphertext(cryptodata.Nil), okems.SharedSecret(cryptodata.Nil), err
 	}
 
-	obfCiphertext := make([]byte, ete.encoder.LengthObfuscatedCiphertext())
+	obfCtxt := make([]byte, ete.encoder.LengthObfuscatedCiphertext())
 	for {
 
-		ok := ete.encoder.EncodeCiphertext(obfCiphertext, kemCiphertext)
+		ok := ete.encoder.EncodeCiphertext(obfCtxt, kemCiphertext.Bytes())
 		if !ok {
 			log.Debugf("cryptofactory - retrying encode for ciphertext")
 			continue
+		}
+
+		obfCiphertext, err := cryptodata.New(obfCtxt, ete.encoder.LengthObfuscatedCiphertext())
+		if err != nil {
+			return okems.ObfuscatedCiphertext(cryptodata.Nil), okems.SharedSecret(cryptodata.Nil), err
 		}
 
 		return okems.ObfuscatedCiphertext(obfCiphertext), okems.SharedSecret(sharedSecret), nil
@@ -114,12 +120,17 @@ func (ete *EncapsThenEncodeOKEM) Encaps(public okems.PublicKey) (okems.Obfuscate
 func (ete *EncapsThenEncodeOKEM) Decaps(private okems.PrivateKey, obfCiphertext okems.ObfuscatedCiphertext) (okems.SharedSecret, error) {
 	kemPrivateKey := (kems.PrivateKey)(private)
 
-	kemCiphertext := make([]byte, ete.kem.LengthCiphertext())
-	ete.encoder.DecodeCiphertext(kemCiphertext, obfCiphertext)
+	ctxt := make([]byte, ete.kem.LengthCiphertext())
+	ete.encoder.DecodeCiphertext(ctxt, obfCiphertext.Bytes())
 
-	sharedSecret, err := ete.kem.Decaps(kemPrivateKey, kemCiphertext)
+	kemCiphertext, err := cryptodata.New(ctxt, ete.kem.LengthCiphertext())
 	if err != nil {
-		return nil, err
+		return okems.SharedSecret(cryptodata.Nil), err
+	}
+
+	sharedSecret, err := ete.kem.Decaps(kemPrivateKey, kems.Ciphertext(kemCiphertext))
+	if err != nil {
+		return okems.SharedSecret(cryptodata.Nil), err
 	}
 
 	return okems.SharedSecret(sharedSecret), nil

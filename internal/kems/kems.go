@@ -74,7 +74,7 @@ func (data PublicKey) Hex() string {
 func PublicKeyFromHex(kem KeyEncapsulationMechanism, encodedPublic string) (PublicKey, error) {
 	dataPublic, err := cryptodata.NewFromHex(encodedPublic, kem.LengthPublicKey())
 	if err != nil {
-		return nil, err
+		return PublicKey(cryptodata.Nil), err
 	}
 
 	return PublicKey(dataPublic), nil

@@ -33,6 +33,7 @@ package cryptofactory
 import (
 	"github.com/open-quantum-safe/liboqs-go/oqs"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/log"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
 
@@ -86,14 +87,38 @@ func (wrapper *OqsWrapperKEM) Encaps(public kems.PublicKey) (kems.Ciphertext, ke
 	kem.Init(wrapper.details.Name, nil)
 	defer kem.Clean()
 
-	return kem.EncapSecret(public.Bytes())
+	ctxt, shared, err := kem.EncapSecret(public.Bytes())
+	if err != nil {
+		return kems.Ciphertext(cryptodata.Nil), kems.SharedSecret(cryptodata.Nil), err
+	}
+
+	kemCiphertext, err := cryptodata.New(ctxt, wrapper.LengthCiphertext())
+	if err != nil {
+		return kems.Ciphertext(cryptodata.Nil), kems.SharedSecret(cryptodata.Nil), err
+	}
+	sharedSecret, err := cryptodata.New(shared, wrapper.LengthSharedSecret())
+	if err != nil {
+		return kems.Ciphertext(cryptodata.Nil), kems.SharedSecret(cryptodata.Nil), err
+	}
+
+	return kems.Ciphertext(kemCiphertext), kems.SharedSecret(sharedSecret), nil
 }
 func (wrapper *OqsWrapperKEM) Decaps(private kems.PrivateKey, ciphertext kems.Ciphertext) (kems.SharedSecret, error) {
 	var kem oqs.KeyEncapsulation
 	kem.Init(wrapper.details.Name, private.Bytes())
 	defer kem.Clean()
 
-	return kem.DecapSecret(ciphertext)
+	shared, err := kem.DecapSecret(ciphertext.Bytes())
+	if err != nil {
+		return kems.SharedSecret(cryptodata.Nil), err
+	}
+
+	sharedSecret, err := cryptodata.New(shared, wrapper.LengthSharedSecret())
+	if err != nil {
+		return kems.SharedSecret(cryptodata.Nil), err
+	}
+
+	return kems.SharedSecret(sharedSecret), nil
 }
 
 func NewOqsWrapper(kemName string) *OqsWrapperKEM {

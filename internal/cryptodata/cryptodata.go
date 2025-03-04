@@ -45,12 +45,16 @@ func (e CryptoDataLengthError) Error() string {
 	return fmt.Sprintf("cryptodata: Invalid crypto data length: %d", int(e))
 }
 
-type CryptoData []byte
+type CryptoData struct {
+	slice []byte
+}
+
+var Nil CryptoData = CryptoData{nil}
 
 // AssertSize checks if the data exactly matches a given length
 func (data CryptoData) AssertSize(numBytes int) error {
-	if len(data) != numBytes {
-		return CryptoDataLengthError(len(data))
+	if len(data.slice) != numBytes {
+		return CryptoDataLengthError(len(data.slice))
 	} else {
 		return nil
 	}
@@ -58,7 +62,7 @@ func (data CryptoData) AssertSize(numBytes int) error {
 
 // Bytes returns a slice to the raw data.
 func (data CryptoData) Bytes() []byte {
-	return data
+	return data.slice
 }
 
 // Hex returns the hexdecimal representation of the data.
@@ -68,8 +72,9 @@ func (data CryptoData) Hex() string {
 
 // New creates a CryptoData from the raw bytes.
 func New(raw []byte, expectedSize int) (CryptoData, error) {
-	data := (CryptoData)(make([]byte, len(raw)))
-	copy(data, raw)
+	var data CryptoData
+	data.slice = make([]byte, len(raw))
+	copy(data.slice, raw)
 
 	err := data.AssertSize(expectedSize)
 
@@ -80,7 +85,7 @@ func New(raw []byte, expectedSize int) (CryptoData, error) {
 func NewFromHex(encoded string, expectedSize int) (CryptoData, error) {
 	raw, err := hex.DecodeString(encoded)
 	if err != nil {
-		return nil, err
+		return Nil, err
 	}
 
 	return New(raw, expectedSize)
