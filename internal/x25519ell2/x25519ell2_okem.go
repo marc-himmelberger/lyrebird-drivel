@@ -20,30 +20,16 @@
 package x25519ell2
 
 import (
-	"crypto/sha512"
-	"crypto/subtle"
-	"errors"
-
 	"filippo.io/edwards25519/field"
 	"gitlab.com/yawning/edwards25519-extra/elligator2"
-	"golang.org/x/crypto/curve25519"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 )
 
 const (
-	// PublicKeyLength is the length of a Curve25519 public key.
-	PublicKeyLength = 32
-
 	// RepresentativeLength is the length of an Elligator representative.
 	RepresentativeLength = 32
-
-	// PrivateKeyLength is the length of a Curve25519 private key.
-	PrivateKeyLength = 32
-
-	// SharedSecretLength is the length of a Curve25519 shared secret.
-	SharedSecretLength = 32
 )
 
 // ### The following implement OKEM operations for x25519ell2 ###
@@ -81,43 +67,15 @@ func (okem *X25519ell2Okem) LengthSharedSecret() int {
 //
 // [ntor]: https://pkg.go.dev/gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/ntor#NewKeypair
 func (okem *X25519ell2Okem) KeyGen() *okems.Keypair {
-	var privateBuf [PrivateKeyLength]byte
-	var publicBuf [PublicKeyLength]byte
-	var obfPublicBuf [RepresentativeLength]byte
+	// Convert KEM keypair to OKEM
+	kp := (*X25519KEM)(nil).KeyGen()
 
-	// Generate a Curve25519 private key.  Like everyone who does this,
-	// run the CSPRNG output through SHA512 for extra tinfoil hattery.
-	//
-	// Also use part of the digest that gets truncated off for the
-	// obfuscation tweak.
-	//
-	// Representative is not needed (no need for obfuscated public keys when not used as ciphertext)
-	for {
-
-		if err := csrand.Bytes(privateBuf[:]); err != nil {
-			panic("x25519ell2: Could not read enough randomness: " + err.Error())
-		}
-		digest := sha512.Sum512(privateBuf[:])
-		copy(privateBuf[:], digest[:])
-
-		tweak := digest[63]
-
-		// Apply the Elligator transform.  This fails ~50% of the time.
-		// Inlined from ScalarBaseMult.
-		u := scalarBaseMultDirty(&privateBuf)
-		if !uToRepresentative(&obfPublicBuf, u, tweak) {
-			// No representative.
-			continue
-		}
-		copy(publicBuf[:], u.Bytes())
-
-		keypair, err := okems.KeypairFromBytes(privateBuf[:], publicBuf[:], PrivateKeyLength, PublicKeyLength)
-		if err != nil {
-			panic("x25519ell2: Could not construct keypair from bytes: " + err.Error())
-		}
-
-		return keypair
+	keypair, err := okems.KeypairFromBytes(kp.Private().Bytes(), kp.Public().Bytes(), PrivateKeyLength, PublicKeyLength)
+	if err != nil {
+		panic("x25519: Could not construct keypair from bytes: " + err.Error())
 	}
+
+	return keypair
 }
 
 // Pieced together from /lyrebird/common/ntor/ntor.go
@@ -125,53 +83,38 @@ func (okem *X25519ell2Okem) KeyGen() *okems.Keypair {
 // gives out an obfuscated public key (in place of ciphertext) plus
 // a shared secret as the result of a point multiplication
 func (okem *X25519ell2Okem) Encaps(public okems.PublicKey) (okems.ObfuscatedCiphertext, okems.SharedSecret, error) {
-	var privateBuf [PrivateKeyLength]byte
-	var publicBuf [PublicKeyLength]byte
 	var obfPublicBuf [RepresentativeLength]byte
-	var sharedSecretArr [SharedSecretLength]byte
 
-	public.AssertSize(PublicKeyLength)
-	pkArr := (*[PublicKeyLength]byte)(public.Bytes())
-
-	// Generate new keypair:
-	// Generate a Curve25519 private key.  Like everyone who does this,
-	// run the CSPRNG output through SHA512 for extra tinfoil hattery.
-	//
-	// Also use part of the digest that gets truncated off for the
-	// obfuscation tweak.
-	//
-	// Representative is needed (as opposed to KeyGen)
 	for {
+		// KEM Encaps & Convert KEM keypair to OKEM
+		kemCiphertext, sharedSecret, err := (*X25519KEM)(nil).Encaps(public.Bytes())
+		if err != nil {
+			return nil, nil, err
+		}
 
-		if err := csrand.Bytes(privateBuf[:]); err != nil {
+		// Convert kemCiphertext back to field element u
+		// XXX: this requires u to be (for all intents and purposes) invariant under u.SetBytes(u.Bytes())
+		pkArr := (*[PublicKeyLength]byte)(kemCiphertext.Bytes())
+
+		var u field.Element
+		if _, err := u.SetBytes(pkArr[:]); err != nil {
+			// Panic is fine, the only way this fails is if the representative
+			// is not 32-bytes.
+			panic("internal/x25519: failed to deserialize representative: " + err.Error())
+		}
+
+		// Generate tweak and encode u
+		var tweak [1]byte
+		if err := csrand.Bytes(tweak[:]); err != nil {
 			panic("x25519ell2: Could not read enough randomness: " + err.Error())
 		}
-		digest := sha512.Sum512(privateBuf[:])
-		copy(privateBuf[:], digest[:])
-
-		tweak := digest[63]
-
-		// Apply the Elligator transform.  This fails ~50% of the time.
-		// Inlined from ScalarBaseMult.
-		u := scalarBaseMultDirty(&privateBuf)
-		if !uToRepresentative(&obfPublicBuf, u, tweak) {
+		if !uToRepresentative(&obfPublicBuf, &u, tweak[0]) {
 			// No representative.
 			continue
 		}
-		copy(publicBuf[:], u.Bytes())
 
-		break
+		return obfPublicBuf[:], okems.SharedSecret(sharedSecret), nil
 	}
-
-	// Client side uses EXP(B,x)
-	curve25519.ScalarMult(&sharedSecretArr, &privateBuf, pkArr)
-	notOk := constantTimeIsZero(sharedSecretArr[:])
-	if notOk != 0 {
-		// bad server public keys can provoke this
-		return nil, nil, errors.New("x25519ell2: Encaps failure: server public keys was low-order, secret would not be secure")
-	}
-
-	return obfPublicBuf[:], sharedSecretArr[:], nil
 }
 
 // Pieced together from /lyrebird/common/ntor/ntor.go
@@ -179,11 +122,9 @@ func (okem *X25519ell2Okem) Encaps(public okems.PublicKey) (okems.ObfuscatedCiph
 // (in place of obfuscated ciphertext), and gives out a shared secret
 // as the result of a point multiplication after decoding the received public key
 func (okem *X25519ell2Okem) Decaps(private okems.PrivateKey, obfCiphertext okems.ObfuscatedCiphertext) (okems.SharedSecret, error) {
-	var publicBuf [PublicKeyLength]byte
-	var sharedSecretArr [SharedSecretLength]byte
+	var kemCiphertext [PublicKeyLength]byte
 
 	obfPkArr := (*[RepresentativeLength]byte)(obfCiphertext.Bytes())
-	privArr := (*[PrivateKeyLength]byte)(private.Bytes())
 
 	// Representatives are encoded in 254 bits.
 	var clamped [32]byte
@@ -197,26 +138,14 @@ func (okem *X25519ell2Okem) Decaps(private okems.PrivateKey, obfCiphertext okems
 		panic("internal/x25519ell2: failed to deserialize representative: " + err.Error())
 	}
 	u, _ := elligator2.MontgomeryFlavor(&fe)
-	copy(publicBuf[:], u.Bytes())
+	copy(kemCiphertext[:], u.Bytes())
 
-	// Client side uses EXP(B,x)
-	curve25519.ScalarMult(&sharedSecretArr, privArr, &publicBuf)
-	notOk := constantTimeIsZero(sharedSecretArr[:])
-	if notOk != 0 {
-		// bad server public keys can provoke this
-		return nil, errors.New("x25519ell2: Encaps failure: server public keys was low-order, secret would not be secure")
+	sharedSecret, err := (*X25519KEM)(nil).Decaps(private.Bytes(), kemCiphertext[:])
+	if err != nil {
+		return nil, err
 	}
 
-	return sharedSecretArr[:], nil
-}
-
-func constantTimeIsZero(x []byte) int {
-	var ret byte
-	for _, v := range x {
-		ret |= v
-	}
-
-	return subtle.ConstantTimeByteEq(ret, 0)
+	return sharedSecret.Bytes(), nil
 }
 
 var _ okems.ObfuscatedKem = (*X25519ell2Okem)(nil)
