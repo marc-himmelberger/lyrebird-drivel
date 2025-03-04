@@ -25,7 +25,6 @@ import (
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 )
 
 const (
@@ -38,7 +37,6 @@ type Elligator2Encoder struct{}
 
 func (encoder *Elligator2Encoder) Init(_ kems.KeyEncapsulationMechanism) {
 	// nothing to initialize, we only have one fixed parameter set
-	return
 }
 func (encoder *Elligator2Encoder) LengthObfuscatedCiphertext() int {
 	return RepresentativeLength
@@ -88,8 +86,4 @@ func (encoder *Elligator2Encoder) DecodeCiphertext(kemCiphertext []byte, obfCiph
 	}
 	u, _ := elligator2.MontgomeryFlavor(&fe)
 	copy(kemCiphertext[:], u.Bytes())
-
-	return
 }
-
-var _ okems.EncapsThenEncode = (*Elligator2Encoder)(nil)

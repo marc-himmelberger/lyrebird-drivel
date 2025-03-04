@@ -28,24 +28,11 @@
 // Package kems provides a Go wrapper and unified interface around the
 // implementation of KEMs.
 
-package kems // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kem"
+package kems // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 
 import (
-	"slices"
-
-	"github.com/open-quantum-safe/liboqs-go/oqs"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/log"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
 )
-
-var oqsEnabledKEMs []string
-
-func init() {
-	supportedKEMs := oqs.SupportedKEMs()
-	log.Infof("OQS - supported KEMs: %s", supportedKEMs)
-	oqsEnabledKEMs = oqs.EnabledKEMs()
-	log.Infof("OQS - enabled KEMs:   %s", oqsEnabledKEMs)
-}
 
 // A KeyEncapsulationMechanism (KEM) defines an interface for key exchange mechanisms,
 // a more modern abstraction for key exchange compared to e.g. Diffie-Hellman.
@@ -62,23 +49,6 @@ type KeyEncapsulationMechanism interface {
 	KeyGen() *Keypair
 	Encaps(PublicKey) (Ciphertext, SharedSecret, error)
 	Decaps(PrivateKey, Ciphertext) (SharedSecret, error)
-}
-
-/*
-Constructs a KEM scheme given a name.
-Legal values for names are:
-  - "x25519" for a wrapper around the corresponding obfs4 implementation without obfuscation,
-    but suitable for elligator2 encoding provided via [okems.NewOkem] as "EtE-x25519"
-  - Any valid name for a KEM enabled in the open-quantum-safe library
-*/
-func NewKem(kemName string) *KeyEncapsulationMechanism {
-	if kemName == "x25519" {
-		// TODO
-	} else if slices.Contains(oqsEnabledKEMs, kemName) {
-		// TODO
-	} else {
-		panic("kem: no KEM found for name: " + kemName)
-	}
 }
 
 // PublicKey is a KEM public key
@@ -187,22 +157,23 @@ func (keypair *Keypair) Private() PrivateKey {
 // from private keys, see https://github.com/open-quantum-safe/liboqs/issues/1802
 // This function is intended for use within a scheme construction.
 // Consumers should do serialization using the [PublicKey.Hex], [PrivateKey.Hex] methods on keys and [KeypairFromHex].
-func KeypairFromBytes(rawPrivate []byte, rawPublic []byte, lengthPrivate int, lengthPublic int) (*Keypair, error) {
+// KeypairFromBytes WILL panic if the byte slices do not exactly match the expected lengths.
+func KeypairFromBytes(rawPrivate []byte, rawPublic []byte, lengthPrivate int, lengthPublic int) *Keypair {
 	dataPrivate, err := cryptodata.New(rawPrivate, lengthPrivate)
 	if err != nil {
-		return nil, err
+		panic("kems: keypair construction with invalid private key length " + err.Error())
 	}
 
 	dataPublic, err := cryptodata.New(rawPublic, lengthPublic)
 	if err != nil {
-		return nil, err
+		panic("kems: keypair construction with invalid private key length " + err.Error())
 	}
 
 	keypair := new(Keypair)
 	keypair.private = PrivateKey(dataPrivate)
 	keypair.public = PublicKey(dataPublic)
 
-	return keypair, nil
+	return keypair
 }
 
 // KeypairFromHex returns a Keypair from the hexdecimal representation of the

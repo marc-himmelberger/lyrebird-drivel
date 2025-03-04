@@ -46,6 +46,7 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/drbg"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/probdist"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/base"
@@ -647,8 +648,8 @@ func (conn *pq_obfsConn) padBurst(burst *bytes.Buffer, toPadTo int) (err error) 
 func init() {
 	flag.BoolVar(&biasedDist, biasCmdArg, false, "Enable pq_obfs using ScrambleSuit style table generation")
 
-	kemScheme = *kems.NewKem(kemName)
-	okemScheme = *okems.NewOkem(okemName)
+	kemScheme = cryptofactory.NewKem(kemName)
+	okemScheme = cryptofactory.NewOkem(okemName)
 }
 
 var _ base.ClientFactory = (*pq_obfsClientFactory)(nil)

@@ -84,29 +84,21 @@ func (kem *X25519KEM) KeyGen() *kems.Keypair {
 	//
 	// Also use part of the digest that gets truncated off for the
 	// obfuscation tweak.
-	for {
-
-		if err := csrand.Bytes(privateBuf[:]); err != nil {
-			panic("x25519: Could not read enough randomness: " + err.Error())
-		}
-		digest := sha512.Sum512(privateBuf[:])
-		copy(privateBuf[:], digest[:])
-		// XXX: Optionally make public key one byte larger, and add digest[63].
-		// This would allow the encoder to yield deterministic representatitves. Do we want that?
-		// Alternative: new csrand call during Encode
-
-		// Apply the Elligator transform.  This fails ~50% of the time.
-		// Inlined from ScalarBaseMult.
-		u := scalarBaseMultDirty(&privateBuf)
-		copy(publicBuf[:], u.Bytes())
-
-		keypair, err := kems.KeypairFromBytes(privateBuf[:], publicBuf[:], PrivateKeyLength, PublicKeyLength)
-		if err != nil {
-			panic("x25519: Could not construct keypair from bytes: " + err.Error())
-		}
-
-		return keypair
+	if err := csrand.Bytes(privateBuf[:]); err != nil {
+		panic("x25519: Could not read enough randomness: " + err.Error())
 	}
+	digest := sha512.Sum512(privateBuf[:])
+	copy(privateBuf[:], digest[:])
+	// XXX: Optionally make public key one byte larger, and add digest[63].
+	// This would allow the encoder to yield deterministic representatitves. Do we want that?
+	// Alternative: new csrand call during Encode
+
+	// Apply the Elligator transform.  This fails ~50% of the time.
+	// Inlined from ScalarBaseMult.
+	u := scalarBaseMultDirty(&privateBuf)
+	copy(publicBuf[:], u.Bytes())
+
+	return kems.KeypairFromBytes(privateBuf[:], publicBuf[:], PrivateKeyLength, PublicKeyLength)
 }
 
 // Pieced together from /lyrebird/common/ntor/ntor.go

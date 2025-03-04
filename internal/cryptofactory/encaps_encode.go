@@ -28,11 +28,12 @@
 // The encaps_encode.go file defines the encapsulate-then-encode
 // construction defined in https://eprint.iacr.org/2024/1086.
 
-package okems // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
+package cryptofactory
 
 import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/log"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 )
 
 // Encoders should not allocate memory nor check slice lengths.
@@ -76,19 +77,18 @@ func (ete *EncapsThenEncodeOKEM) LengthSharedSecret() int {
 }
 
 // KeyGen of encaps-then-encapsulate construction uses KEM directly
-func (ete *EncapsThenEncodeOKEM) KeyGen() *Keypair {
+func (ete *EncapsThenEncodeOKEM) KeyGen() *okems.Keypair {
 	kemKeypair := ete.kem.KeyGen()
 
-	keypair := new(Keypair)
-	keypair.private = PrivateKey(kemKeypair.Private())
-	keypair.public = PublicKey(kemKeypair.Public())
-
-	return keypair
+	return okems.KeypairFromBytes(
+		kemKeypair.Private().Bytes(), kemKeypair.Public().Bytes(),
+		ete.kem.LengthPrivateKey(), ete.kem.LengthPublicKey(),
+	)
 }
 
 // Encaps of encaps-then-encapsulate construction performs KEM encapsulation and
 // then encodes the resulting ciphertext using the encoder, not changing the shared secret
-func (ete *EncapsThenEncodeOKEM) Encaps(public PublicKey) (ObfuscatedCiphertext, SharedSecret, error) {
+func (ete *EncapsThenEncodeOKEM) Encaps(public okems.PublicKey) (okems.ObfuscatedCiphertext, okems.SharedSecret, error) {
 	kemPublicKey := (kems.PublicKey)(public)
 
 	kemCiphertext, sharedSecret, err := ete.kem.Encaps(kemPublicKey)
@@ -101,17 +101,17 @@ func (ete *EncapsThenEncodeOKEM) Encaps(public PublicKey) (ObfuscatedCiphertext,
 
 		ok := ete.encoder.EncodeCiphertext(obfCiphertext, kemCiphertext)
 		if !ok {
-			log.Debugf("encaps_encode - retrying encode for ciphertext")
+			log.Debugf("cryptofactory - retrying encode for ciphertext")
 			continue
 		}
 
-		return ObfuscatedCiphertext(obfCiphertext), SharedSecret(sharedSecret), nil
+		return okems.ObfuscatedCiphertext(obfCiphertext), okems.SharedSecret(sharedSecret), nil
 	}
 }
 
 // Decaps of encaps-then-encapsulate construction uses the encoder to decode the ciphertext,
 // and performs KEM decapsulation on the result
-func (ete *EncapsThenEncodeOKEM) Decaps(private PrivateKey, obfCiphertext ObfuscatedCiphertext) (SharedSecret, error) {
+func (ete *EncapsThenEncodeOKEM) Decaps(private okems.PrivateKey, obfCiphertext okems.ObfuscatedCiphertext) (okems.SharedSecret, error) {
 	kemPrivateKey := (kems.PrivateKey)(private)
 
 	kemCiphertext := make([]byte, ete.kem.LengthCiphertext())
@@ -122,7 +122,7 @@ func (ete *EncapsThenEncodeOKEM) Decaps(private PrivateKey, obfCiphertext Obfusc
 		return nil, err
 	}
 
-	return SharedSecret(sharedSecret), nil
+	return okems.SharedSecret(sharedSecret), nil
 }
 
-var _ ObfuscatedKem = (*EncapsThenEncodeOKEM)(nil)
+var _ okems.ObfuscatedKem = (*EncapsThenEncodeOKEM)(nil)

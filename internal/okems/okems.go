@@ -34,10 +34,7 @@
 package okems // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 
 import (
-	"strings"
-
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
 
 // An ObfuscatedKem (OKEM) defines an interface for key exchange mechanisms outputting
@@ -59,53 +56,6 @@ type ObfuscatedKem interface {
 	KeyGen() *Keypair
 	Encaps(PublicKey) (ObfuscatedCiphertext, SharedSecret, error)
 	Decaps(PrivateKey, ObfuscatedCiphertext) (SharedSecret, error)
-}
-
-/*
-Constructs an OKEM scheme given a name.
-Legal values for names are:
-  - "EtE-<kem_name>" if "<kem_name>" is a valid name for
-    [kems.NewKem], and a corresponding [EncapsThenEncode] is implemented.
-  - TODO Optional - "OEINC[<okem1>,<okem2>]" if "<okem1>" and "<okem2>" are both
-    valid names for [okems.NewOkem]
-*/
-func NewOkem(okemName string) *ObfuscatedKem {
-	if strings.HasPrefix(okemName, "EtE-") {
-		// "EtE-<kem_name>" if "<kem_name>" is a valid name for [kems.NewKem]
-		// Construct KEM
-		kemName := okemName[4:]
-		kem := kems.NewKem(kemName)
-		// Select encoder
-		// TODO: cover more implementations from https://github.com/open-quantum-safe/liboqs/blob/main/src/kem/kem.h#L42
-		var encoder EncapsThenEncode
-		switch kemName {
-		case "DHKEM":
-			encoder = &x25519ell2.X25519ell2Encoder{}
-		//case "KEM1", "KEM2":
-		//	encoder = Kem1Encoder{}
-		default:
-			panic("no encoding mapped for KEM " + kemDetails.Name)
-		}
-		// Combine
-		return NewEncapsThenEncode(kem, encoder)
-	} else if strings.HasPrefix(okemName, "OEINC[") && strings.HasSuffix(okemName, "]") {
-		// "OEINC[<okem1>,<okem2>]" if "<okem1>" and "<okem2>" are both valid names for [okems.NewOkem]
-		// Extract names
-		componentNames := okemName[6 : len(okemName)-1]
-		components := strings.Split(componentNames, ",")
-		if len(components) != 2 {
-			panic("okem: invalid number of OEINC component OKEMs: " + okemName)
-		}
-		okemName1 := components[0]
-		okemName2 := components[1]
-		// Construct OKEMs
-		okem1 := NewOkem(okemName1)
-		okem2 := NewOkem(okemName2)
-		// Combine
-		return NewOEINC(okem1, okem2)
-	} else {
-		panic("okem: no OKEM construction found for name: " + okemName)
-	}
 }
 
 // PublicKey is an OKEM public key
@@ -213,22 +163,23 @@ func (keypair *Keypair) Private() PrivateKey {
 // from private keys, see https://github.com/open-quantum-safe/liboqs/issues/1802
 // This function is intended for use within a scheme construction.
 // Consumers should do serialization using the [PublicKey.Hex], [PrivateKey.Hex] methods on keys and [KeypairFromHex].
-func KeypairFromBytes(rawPrivate []byte, rawPublic []byte, lengthPrivate int, lengthPublic int) (*Keypair, error) {
+// KeypairFromBytes WILL panic if the byte slices do not exactly match the expected lengths.
+func KeypairFromBytes(rawPrivate []byte, rawPublic []byte, lengthPrivate int, lengthPublic int) *Keypair {
 	dataPrivate, err := cryptodata.New(rawPrivate, lengthPrivate)
 	if err != nil {
-		return nil, err
+		panic("okems: keypair construction with invalid private key length " + err.Error())
 	}
 
 	dataPublic, err := cryptodata.New(rawPublic, lengthPublic)
 	if err != nil {
-		return nil, err
+		panic("okems: keypair construction with invalid public key length " + err.Error())
 	}
 
 	keypair := new(Keypair)
 	keypair.private = PrivateKey(dataPrivate)
 	keypair.public = PublicKey(dataPublic)
 
-	return keypair, nil
+	return keypair
 }
 
 // KeypairFromHex returns a Keypair from the hexdecimal representation of the
