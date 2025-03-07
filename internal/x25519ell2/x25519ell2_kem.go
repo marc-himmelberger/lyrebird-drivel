@@ -142,6 +142,8 @@ func (kem *X25519KEM) Decaps(private kems.PrivateKey, ciphertext kems.Ciphertext
 	var publicBuf [PublicKeyLength]byte
 	var sharedSecretArr [SharedSecretLength]byte
 
+	ciphertext.AssertSize(PublicKeyLength)
+	private.AssertSize(PrivateKeyLength)
 	pkArr := (*[PublicKeyLength]byte)(ciphertext.Bytes())
 	privArr := (*[PrivateKeyLength]byte)(private.Bytes())
 

@@ -45,6 +45,7 @@ import (
 // because public key uniformity is not needed in Drivel as we only transmit encrypted
 // public keys during the handshake.
 // OKEM public keys are distributed with the bridge information out-of-band.
+// Implementations MUST use AssertSize to check the size of arguments during Encaps, Decaps.
 type ObfuscatedKem interface {
 	Name() string
 

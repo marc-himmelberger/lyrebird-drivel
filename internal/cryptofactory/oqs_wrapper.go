@@ -87,6 +87,8 @@ func (wrapper *OqsWrapperKEM) Encaps(public kems.PublicKey) (kems.Ciphertext, ke
 	kem.Init(wrapper.details.Name, nil)
 	defer kem.Clean()
 
+	public.AssertSize(wrapper.details.LengthPublicKey)
+
 	ctxt, shared, err := kem.EncapSecret(public.Bytes())
 	if err != nil {
 		return kems.Ciphertext(cryptodata.Nil), kems.SharedSecret(cryptodata.Nil), err
@@ -107,6 +109,9 @@ func (wrapper *OqsWrapperKEM) Decaps(private kems.PrivateKey, ciphertext kems.Ci
 	var kem oqs.KeyEncapsulation
 	kem.Init(wrapper.details.Name, private.Bytes())
 	defer kem.Clean()
+
+	ciphertext.AssertSize(wrapper.details.LengthCiphertext)
+	private.AssertSize(wrapper.details.LengthSecretKey)
 
 	shared, err := kem.DecapSecret(ciphertext.Bytes())
 	if err != nil {

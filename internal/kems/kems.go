@@ -38,6 +38,7 @@ import (
 // a more modern abstraction for key exchange compared to e.g. Diffie-Hellman.
 // KEM public keys and ciphertext may be easily distinguishable from random bits,
 // and are therefore not suitable for direct transmission in Drivel.
+// Implementations MUST use AssertSize to check the size of arguments during Encaps, Decaps.
 type KeyEncapsulationMechanism interface {
 	Name() string
 

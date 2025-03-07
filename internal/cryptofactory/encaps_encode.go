@@ -90,6 +90,7 @@ func (ete *EncapsThenEncodeOKEM) KeyGen() *okems.Keypair {
 // Encaps of encaps-then-encapsulate construction performs KEM encapsulation and
 // then encodes the resulting ciphertext using the encoder, not changing the shared secret
 func (ete *EncapsThenEncodeOKEM) Encaps(public okems.PublicKey) (okems.ObfuscatedCiphertext, okems.SharedSecret, error) {
+	public.AssertSize(ete.kem.LengthPublicKey())
 	kemPublicKey := (kems.PublicKey)(public)
 
 	kemCiphertext, sharedSecret, err := ete.kem.Encaps(kemPublicKey)
@@ -118,6 +119,8 @@ func (ete *EncapsThenEncodeOKEM) Encaps(public okems.PublicKey) (okems.Obfuscate
 // Decaps of encaps-then-encapsulate construction uses the encoder to decode the ciphertext,
 // and performs KEM decapsulation on the result
 func (ete *EncapsThenEncodeOKEM) Decaps(private okems.PrivateKey, obfCiphertext okems.ObfuscatedCiphertext) (okems.SharedSecret, error) {
+	obfCiphertext.AssertSize(ete.encoder.LengthObfuscatedCiphertext())
+	private.AssertSize(ete.kem.LengthPrivateKey())
 	kemPrivateKey := (kems.PrivateKey)(private)
 
 	ctxt := make([]byte, ete.kem.LengthCiphertext())
