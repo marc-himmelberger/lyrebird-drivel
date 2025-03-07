@@ -383,7 +383,7 @@ func (conn *drivelConn) clientHandshake(args *drivelClientArgs) error {
 		_ = conn.receiveBuffer.Next(n)
 
 		// Use the derived key material to intialize the link crypto.
-		okm := drivelcrypto.Kdf(seed, framing.KeyLength*2)
+		okm := drivelcrypto.KdfExpand(seed, framing.KeyLength*2, mExpand)
 		conn.encoder = framing.NewEncoder(okm[:framing.KeyLength])
 		conn.decoder = framing.NewDecoder(okm[framing.KeyLength:])
 
@@ -426,7 +426,7 @@ func (conn *drivelConn) serverHandshake(sf *drivelServerFactory) error {
 		}
 
 		// Use the derived key material to intialize the link crypto.
-		okm := drivelcrypto.Kdf(seed, framing.KeyLength*2)
+		okm := drivelcrypto.KdfExpand(seed, framing.KeyLength*2, mExpand)
 		conn.encoder = framing.NewEncoder(okm[framing.KeyLength:])
 		conn.decoder = framing.NewDecoder(okm[:framing.KeyLength])
 

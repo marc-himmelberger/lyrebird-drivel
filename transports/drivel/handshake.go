@@ -34,12 +34,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"hash"
 	"strconv"
 	"time"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/drivelcrypto"
@@ -57,11 +57,17 @@ const (
 	serverMaxPadLength       = maxHandshakeLength - (serverMinHandshakeLength + inlineSeedFrameLength)
 	serverMinHandshakeLength = drivelcrypto.RepresentativeLength + drivelcrypto.AuthLength + markLength + macLength
 
-	markLength = sha256.Size / 2
-	macLength  = sha256.Size / 2
-
 	inlineSeedFrameLength = framing.FrameOverhead + packetOverhead + seedPacketPayloadLength
+
+	markLength = sha256.Size
+	macLength  = sha256.Size
 )
+
+// Define string constants for info/context inputs to HMAC and HKDF
+var protoID = []byte("Drivel")
+var mExpandEnc1 = append(protoID, []byte(":enckey1")...)
+var mExpandEnc2 = append(protoID, []byte(":enckey2")...)
+var mExpand = append(protoID, []byte(":key_expand")...)
 
 // ErrMarkNotFoundYet is the error returned when the drivel handshake is
 // incomplete and requires more data to continue.  This error is non-fatal and
@@ -115,21 +121,20 @@ type clientHandshake struct {
 	kem  kems.KeyEncapsulationMechanism
 
 	// already present in obfs4, set during newClientHandshake
-	keypair        *kems.Keypair
-	nodeID         *drivelcrypto.NodeID
-	serverIdentity *okems.PublicKey
-	padLen         int
+
+	keypair        *kems.Keypair        // pk_e, sk_e
+	nodeID         *drivelcrypto.NodeID // NodeID
+	serverIdentity okems.PublicKey      // pk_S
+	padLen         int                  // P_C
 
 	// new additions in Drivel, only set in generateHandshake
-	ephemeralSharedSecret []byte // K_S
-	ephemeralSecret       []byte // ES
-	encryptionKey1        []byte // EK_1
-	encryptionKey2        []byte // EK_2
 
-	prfEphermalSecret hash.Hash // F_1(ES, ...)
+	ephemeralSecret []byte // ES
+	encryptionKey1  []byte // EK_1
+	encryptionKey2  []byte // EK_2
 
 	// already present in obfs4, but only set in generateHandshake
-	epochHour []byte
+	epochHour int64
 }
 
 // Constructor which sets up struct for handshake. Never fails.
@@ -144,27 +149,24 @@ func newClientHandshake(
 	hs.keypair = sessionKey
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity
-	hs.padLen = csrand.IntRange(clientMinPadLength, clientMaxPadLength) // TODO change distribution?
+	hs.padLen = csrand.IntRange(clientMinPadLength, clientMaxPadLength) // XXX change distribution?
 
 	return hs
 }
 
 func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 	var err error
-	var sessionSecrets []byte
-	var okemCiphertext []byte        // c_S
-	var encClientKemPublicKey []byte // epk_e
-	var mark []byte                  // M_C
-	var mac []byte                   // MAC_C
+	var okemCiphertext okems.ObfuscatedCiphertext // c_S
+	var encClientKemPublicKey []byte              // epk_e
+	var clientMark []byte                         // M_C
+	var clientMac []byte                          // MAC_C
 
 	// The client handshake is epk_e | c_S | P_C | M_C | MAC_C(epk_e | c_S | P_C | M_C | E) where:
 	//  * epk_e is the encrypted client KEM public key.
 	//  * c_S is the (obfuscated) OKEM ciphertext.
 	//  * P_C is [clientMinPadLength,clientMaxPadLength] bytes of random padding.
-	// TODO change?
+	// XXX change?
 	//  * M_C is a "mark" computed as HMAC-SHA256(ES, epk_e | c_S| ":mc")
-	// TODO do not truncate, RFC4868 does not specify those as PRFs anymore
-	// TODO but I suppose we could truncate just for Marks and MACs as per the RFC
 	//  * MAC_C is HMAC-SHA256(ES, epk_e | ... | E | ":mac_c")
 	//  * E is the string representation of the number of hours since the UNIX epoch.
 
@@ -175,59 +177,51 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 	}
 
 	// Encapsulate with OKEM against server
-	okemCiphertext, hs.ephemeralSharedSecret, err = okems.Encaps(hs.serverIdentity)
+	okemCiphertext, shared, err := hs.okem.Encaps(hs.serverIdentity)
 	if err != nil {
 		return nil, err
 	}
 
-	// Derive session secrets from NodeID and OKEM shared secret
+	// Derive ephemeral secret from NodeID and OKEM shared secret
 	prfSessionCombiner := hmac.New(sha256.New, hs.nodeID.Bytes()[:])
 	prfSessionCombiner.Reset()
-	_, _ = prfSessionCombiner.Write(hs.ephemeralSharedSecret)
-	sessionSecrets = prfSessionCombiner.Sum(nil)
+	_, _ = prfSessionCombiner.Write(shared.Bytes())
+	hs.ephemeralSecret = prfSessionCombiner.Sum(nil)
 
-	// TODO Output length is too small for XOR-Encryption of an entire public key?
-	// TODO What should these lengths be? How would we expand?
-	ephemeralSecretLength := 10 // TODO move up to constants
-	hs.ephemeralSecret = sessionSecrets[:ephemeralSecretLength]
-	// XXX add KDF expand step with different :derive_key values?
-	hs.encryptionKey1 = sessionSecrets[:ephemeralSecretLength]
-	hs.encryptionKey2 = sessionSecrets[:ephemeralSecretLength]
-
-	// Prepare other PRF given our derived secrets
-	hs.prfEphermalSecret = hmac.New(sha256.New, hs.ephemeralSecret)
+	// Derive encryption keys from ephemeral secret using KDF and different info values
+	hs.encryptionKey1 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc1, drivelcrypto.KdfOutLength)
+	hs.encryptionKey2 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc2, drivelcrypto.KdfOutLength)
 
 	// Encrypt own KEM public key
 	clientKemPublicKey := hs.keypair.Public()
 	encClientKemPublicKey = drivelcrypto.XorEncryptDecrypt(hs.encryptionKey1, clientKemPublicKey.Bytes())
-	// TODO figure out how this should work?
 
 	// buf will be used to construct the final message
 	var buf bytes.Buffer
 
 	// Start building message as epk_e | c_S
 	buf.Write(encClientKemPublicKey)
-	buf.Write(okemCiphertext)
+	buf.Write(okemCiphertext.Bytes())
 
 	// Derive mark before padding
-	mark = drivelcrypto.MessageMark(hs.prfEphermalSecret, true, buf.Bytes())
+	clientMark = drivelcrypto.MessageMark(hs.ephemeralSecret, true, buf.Bytes())
 
 	// Continue building message with P_C | M_C
 	buf.Write(pad)
-	buf.Write(mark)
+	buf.Write(clientMark)
 
 	// Generate MAC over entire message
-	hs.epochHour = []byte(strconv.FormatInt(getEpochHour(), 10))
-	mac = drivelcrypto.MessageMAC(hs.prfEphermalSecret, true, buf.Bytes(), hs.epochHour)
+	hs.epochHour = getEpochHour()
+	clientMac = drivelcrypto.MessageMAC(hs.ephemeralSecret, true, buf.Bytes(), hs.epochHour)
 
 	// Complete message with mac
-	buf.Write(mac)
+	buf.Write(clientMac)
 
 	return buf.Bytes(), nil
 }
 
 func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error) {
-	// TODO this verifies the final server message!
+	// INFO this verifies the final server message!
 
 	// No point in examining the data unless the miminum plausible response has
 	// been received.
@@ -282,23 +276,30 @@ func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error
 	return pos + markLength + macLength, seed.Bytes()[:], nil
 }
 
+// The serverHandshake struct saves all state needed for the
+// server and is analogous to clientHandshake.
 type serverHandshake struct {
 	// Interface references for employed schemes
 	okem okems.ObfuscatedKem
 	kem  kems.KeyEncapsulationMechanism
 
-	// TODO: needs to be adapted from here
-	keypair        *okems.Keypair
-	nodeID         *drivelcrypto.NodeID
-	serverIdentity *okems.Keypair
-	epochHour      []byte
-	serverAuth     *drivelcrypto.Auth
+	// already present in obfs4, set during newServerHandshake
 
-	padLen int
-	mac    hash.Hash
+	serverIdentity *okems.Keypair       // pk_S, sk_S
+	nodeID         *drivelcrypto.NodeID // NodeID
+	padLen         int                  // P_S
 
-	clientRepresentative *drivelcrypto.Representative
-	clientMark           []byte
+	// new additions in Drivel, only set in parseClientHandshake
+
+	encClientKemPublicKey []byte // epk_e
+	clientMark            []byte // M_C
+
+	ephemeralSecret []byte // ES
+	encryptionKey1  []byte // EK_1
+	encryptionKey2  []byte // EK_2
+
+	// already present in obfs4, but only set in parseClientHandshake
+	epochHour int64
 }
 
 func newServerHandshake(
@@ -308,17 +309,15 @@ func newServerHandshake(
 	hs := new(serverHandshake)
 	hs.okem = okem
 	hs.kem = kem
-	hs.keypair = sessionKey
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity
 	hs.padLen = csrand.IntRange(serverMinPadLength, serverMaxPadLength)
-	hs.mac = hmac.New(sha256.New, append(hs.serverIdentity.Public().Bytes(), hs.nodeID.Bytes()[:]...))
 
 	return hs
 }
 
 func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilter, resp []byte) ([]byte, error) {
-	// TODO this receives a client message and parses it!
+	// INFO this receives a client message and parses it!
 
 	// No point in examining the data unless the miminum plausible response has
 	// been received.
@@ -326,17 +325,44 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 		return nil, ErrMarkNotFoundYet
 	}
 
-	if hs.clientRepresentative == nil {
-		// Pull out the representative/AUTH. (XXX: Add ctors to drivelcrypto)
-		hs.clientRepresentative = new(drivelcrypto.Representative)
-		copy(hs.clientRepresentative.Bytes()[:], resp[0:drivelcrypto.RepresentativeLength])
+	// First, set ephemeralSecret, encClientKemPublicKey and clientMark
+	if hs.ephemeralSecret == nil {
+		var okemCiphertext okems.ObfuscatedCiphertext // c_S
+
+		// Pull out message before padding: epk_e | c_S
+		epkLength := hs.kem.LengthPublicKey()
+		csLength := hs.okem.LengthCiphertext()
+		// TODO lift this up together with non-constant length constants
+
+		hs.encClientKemPublicKey = make([]byte, epkLength)
+		okemCtxt := make([]byte, csLength)
+
+		copy(hs.encClientKemPublicKey, resp[0:epkLength])
+		copy(okemCtxt, resp[epkLength:epkLength+csLength])
+
+		cd, err := cryptodata.New(okemCtxt, csLength)
+		if err != nil {
+			return nil, err
+		}
+		okemCiphertext = okems.ObfuscatedCiphertext(cd)
+
+		// Decapsulate with OKEM
+		shared, err := hs.okem.Decaps(hs.serverIdentity.Private(), okemCiphertext)
+		if err != nil {
+			return nil, err
+		}
+
+		// Derive ephemeral secret from NodeID and OKEM shared secret
+		prfSessionCombiner := hmac.New(sha256.New, hs.nodeID.Bytes()[:])
+		prfSessionCombiner.Reset()
+		_, _ = prfSessionCombiner.Write(shared.Bytes())
+		hs.ephemeralSecret = prfSessionCombiner.Sum(nil)
 
 		// Derive the mark.
-		hs.mac.Reset()
-		_, _ = hs.mac.Write(hs.clientRepresentative.Bytes()[:])
-		hs.clientMark = hs.mac.Sum(nil)[:markLength]
+		hs.clientMark = drivelcrypto.MessageMark(hs.ephemeralSecret, true, resp[0:epkLength+csLength])
 	}
 
+	// TODO UPDATE CODE FROM HERE
 	// Attempt to find the mark + MAC.
 	pos := findMarkMac(hs.clientMark, resp, drivelcrypto.RepresentativeLength+clientMinPadLength,
 		maxHandshakeLength, true)
@@ -397,7 +423,7 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 }
 
 func (hs *serverHandshake) generateHandshake() ([]byte, error) {
-	// TODO this uses a parsed client message to send a response!
+	// INFO this uses a parsed client message to send a response!
 
 	var buf bytes.Buffer
 

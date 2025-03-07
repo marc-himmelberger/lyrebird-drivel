@@ -26,8 +26,7 @@
  */
 
 // Package drivelcrypto implements the cryptographic functionality of the Drivel
-// protocol as defined in
-// TODO: <link hybrid paper>.
+// protocol as defined in https://eprint.iacr.org/2025/408.
 // It also supports using OKEMs to transform the public keys and ciphertexts sent
 // over the wire to a form that is indistinguishable from random strings.
 package drivelcrypto // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/drivelcrypto"
@@ -54,10 +53,15 @@ const (
 	// KeySeedLength is the length of the derived KEY_SEED.
 	KeySeedLength = sha256.Size
 
-	// AuthLength is the lenght of the derived AUTH.
+	// AuthLength is the lenghth of the derived AUTH.
 	AuthLength = sha256.Size
+
+	// KdfOutLength is the length of one round of KDF application.
+	// It should be used when a constant-size KDF output is desired.
+	KdfOutLength = sha256.Size
 )
 
+// Define string constants for info/context inputs to HMAC and HKDF
 var protoID = []byte("Drivel")
 var tMarkClient = append(protoID, []byte(":mc")...)
 var tMarkServer = append(protoID, []byte(":ms")...)
@@ -66,7 +70,7 @@ var tMacServer = append(protoID, []byte(":mac_s")...)
 var tDerive = append(protoID, []byte(":derive_key")...)
 var tSKey = append(protoID, []byte(":key_extract")...)
 var tKeyVerify = append(protoID, []byte(":server_mac")...)
-var mExpand = append(protoID, []byte(":key_expand")...)
+var mXorExpand = append(protoID, []byte(":enc_expand")...)
 
 // NodeIDLengthError is the error returned when the node ID being imported is
 // an invalid length.
@@ -229,44 +233,47 @@ func drivelCommon(prfEphermalSecret hash.Hash, sharedKemSecret []byte,
 	return keySeed, auth
 }
 
-// MessageMark computes a mark as prf(msgMark | tMarkClient)
-// or prf(msgMark | tMarkServer) depending on `isClient`.a
-func MessageMark(prfEphermalSecret hash.Hash, isClient bool, msgMark []byte) (mark []byte) {
+// MessageMark computes a mark as HKDF-SHA256(ephermalSecret, msgMark | tMarkClient, KdfOutLength)
+// or HKDF-SHA256(ephermalSecret, msgMark | tMarkServer, KdfOutLength) depending on `isClient`.
+func MessageMark(ephermalSecret []byte, isClient bool, msgMark []byte) (mark []byte) {
 	tag := tMarkServer
 	if isClient {
 		tag = tMarkClient
 	}
 
-	prfEphermalSecret.Reset()
-	_, _ = prfEphermalSecret.Write(msgMark)
-	_, _ = prfEphermalSecret.Write(tag)
-	mark = prfEphermalSecret.Sum(nil)
+	var infoBuf bytes.Buffer
+	_, _ = infoBuf.Write(msgMark)
+	_, _ = infoBuf.Write(tag)
 
-	return mark
+	return KdfExpand(ephermalSecret, infoBuf.Bytes(), KdfOutLength)
 }
 
-// MessageMAC computes a MAC with HMAC-SHA-256 over the entire `msg` (must include the mark)
+// MessageMAC computes a MAC with HMAC-SHA-256 over the entire `msg` (should include the mark)
 // followed by tMacClient or tMacServer respectively (depending on the value of `isClient`).
-func MessageMAC(prfEphermalSecret hash.Hash, isClient bool, msg []byte, epochHour []byte) (mac []byte) {
+// The argument `epochHour` is also integrated into the MAC and should not be sent alongside the message.
+func MessageMAC(ephermalSecret []byte, isClient bool, msg []byte, epochHour int64) (mac []byte) {
 	tag := tMacServer
 	if isClient {
 		tag = tMacClient
 	}
 
-	prfEphermalSecret.Reset()
-	_, _ = prfEphermalSecret.Write(msg)
-	_, _ = prfEphermalSecret.Write(epochHour) // TODO I think this avoids format confusion attacks, but double-check
-	_, _ = prfEphermalSecret.Write(tag)
-	mac = prfEphermalSecret.Sum(nil)
+	// Use fixed-length encoding of epoch hour to avoid confusion attacks
+	// An 8-digit representation lasts until at least the year 12 000
+	epochHourStr := fmt.Sprintf("%08d", epochHour)
 
-	return mac
+	var infoBuf bytes.Buffer
+	_, _ = infoBuf.Write(msg)
+	_, _ = infoBuf.Write([]byte(epochHourStr))
+	_, _ = infoBuf.Write(tag)
+
+	return KdfExpand(ephermalSecret, infoBuf.Bytes(), KdfOutLength)
 }
 
 // KdfExpand expands pseudorandomKey via HKDF-SHA256 and returns `okm_len` bytes
 // of key material. pseudorandomKey must be a strong pseudorandom cryptographic key.
-// Info is an arbitrary identifier for the output, repeated keys will yield the same output.
-func KdfExpand(pseudorandomKey []byte, okmLen int) []byte {
-	kdf := hkdf.Expand(sha256.New, pseudorandomKey, mExpand) // TODO mExpand might need to be an argument if we derive EK1 and EK2 from ES.
+// Info is an arbitrary identifier for the output, repeated key-info pairs will yield the same output.
+func KdfExpand(pseudorandomKey []byte, info []byte, okmLen int) []byte {
+	kdf := hkdf.Expand(sha256.New, pseudorandomKey, info)
 	okm := make([]byte, okmLen)
 	n, err := io.ReadFull(kdf, okm)
 	if err != nil {
@@ -282,7 +289,7 @@ func KdfExpand(pseudorandomKey []byte, okmLen int) []byte {
 // This performs symmetric encryption/decryption and may hide structure within a message.
 // However, this function MUST NOT be called twice with the same key.
 func XorEncryptDecrypt(key []byte, message []byte) []byte {
-	expanded := KdfExpand(key, len(message))
+	expanded := KdfExpand(key, mXorExpand, len(message))
 	n := subtle.XORBytes(expanded, expanded, message)
 	if n != len(message) {
 		panic(fmt.Sprintf("BUG: XOR encrypt/decrypt got truncated output: %d", n))
