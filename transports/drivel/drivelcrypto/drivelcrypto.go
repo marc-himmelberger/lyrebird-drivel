@@ -38,11 +38,10 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
-	"hash"
 	"io"
 
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
-	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -51,10 +50,10 @@ const (
 	NodeIDLength = 20
 
 	// KeySeedLength is the length of the derived KEY_SEED.
-	KeySeedLength = sha256.Size
+	KeySeedLength = KdfOutLength
 
 	// AuthLength is the lenghth of the derived AUTH.
-	AuthLength = sha256.Size
+	AuthLength = KdfOutLength
 
 	// KdfOutLength is the length of one round of KDF application.
 	// It should be used when a constant-size KDF output is desired.
@@ -131,53 +130,6 @@ func (id *NodeID) Hex() string {
 	return hex.EncodeToString(id[:])
 }
 
-// ServerHandshake does the server side of a Drivel handshake and returns status,
-// KEY_SEED, and AUTH.  If status is not true, the handshake MUST be aborted.
-func ServerHandshake(clientPublic *PublicKey, serverKeypair *Keypair, idKeypair *Keypair, id *NodeID) (ok bool, keySeed *KeySeed, auth *Auth) {
-	var notOk int
-	var secretInput bytes.Buffer
-
-	// Server side uses EXP(X,y) | EXP(X,b)
-	var exp [SharedSecretLength]byte
-	curve25519.ScalarMult(&exp, serverKeypair.private.Bytes(),
-		clientPublic.Bytes())
-	notOk |= constantTimeIsZero(exp[:])
-	secretInput.Write(exp[:])
-
-	curve25519.ScalarMult(&exp, idKeypair.private.Bytes(),
-		clientPublic.Bytes())
-	notOk |= constantTimeIsZero(exp[:])
-	secretInput.Write(exp[:])
-
-	keySeed, auth = drivelCommon(secretInput, id, idKeypair.public,
-		clientPublic, serverKeypair.public)
-	return notOk == 0, keySeed, auth
-}
-
-// ClientHandshake does the client side of a Drivel handshake and returnes
-// status, KEY_SEED, and AUTH.  If status is not true or AUTH does not match
-// the value recieved from the server, the handshake MUST be aborted.
-func ClientHandshake(clientKeypair *Keypair, serverPublic *PublicKey, idPublic *PublicKey, id *NodeID) (ok bool, keySeed *KeySeed, auth *Auth) {
-	var notOk int
-	var secretInput bytes.Buffer
-
-	// Client side uses EXP(Y,x) | EXP(B,x)
-	var exp [SharedSecretLength]byte
-	curve25519.ScalarMult(&exp, clientKeypair.private.Bytes(),
-		serverPublic.Bytes())
-	notOk |= constantTimeIsZero(exp[:])
-	secretInput.Write(exp[:])
-
-	curve25519.ScalarMult(&exp, clientKeypair.private.Bytes(),
-		idPublic.Bytes())
-	notOk |= constantTimeIsZero(exp[:])
-	secretInput.Write(exp[:])
-
-	keySeed, auth = drivelCommon(secretInput, id, idPublic,
-		clientKeypair.public, serverPublic)
-	return notOk == 0, keySeed, auth
-}
-
 // CompareAuth does a constant time compare of a Auth and a byte slice
 // (presumably received over a network).
 func CompareAuth(auth1 *Auth, auth2 []byte) bool {
@@ -185,50 +137,36 @@ func CompareAuth(auth1 *Auth, auth2 []byte) bool {
 	return hmac.Equal(auth1Bytes[:], auth2)
 }
 
-func drivelCommon(prfEphermalSecret hash.Hash, sharedKemSecret []byte,
-	serverOkemPublicKey *okems.PublicKey, okemCiphertext []byte,
-	clientKemPublicKey *okems.PublicKey, kemCiphertext []byte) (keySeed *KeySeed, auth *Auth) {
+// DrivelCommon is one of the final steps of the client and server sides of the handshake.
+// It returns status, KEY_SEED, and AUTH.  If status is not true or (in case of the client)
+// AUTH does not match the value recieved from the server, the handshake MUST be aborted.
+// As this function is common for client and server, it does not accept handshake structs.
+func DrivelCommon(ephemeralSecret []byte, sharedKemSecret kems.SharedSecret,
+	serverOkemPublicKey okems.PublicKey, okemCiphertext okems.ObfuscatedCiphertext,
+	clientKemPublicKey kems.PublicKey, kemCiphertext kems.Ciphertext) (keySeed *KeySeed, auth *Auth) {
 
-	var derivedSecret []byte       // ES'
-	var finalSecret []byte         // ES'
-	var prfFinalCombiner hash.Hash // F_2(ES', ...)
-	var prfFinalSecret hash.Hash   // F_1(FS, ...)
+	var derivedSecret []byte // ES'
+	var finalSecret []byte   // FS
 
 	// ES' = F1(ES, ":derive_key")
-	prfEphermalSecret.Reset()
-	_, _ = prfEphermalSecret.Write(tDerive)
-	derivedSecret = prfEphermalSecret.Sum(nil)
-
-	// F2(ES', ...)
-	prfFinalCombiner = hmac.New(sha256.New, derivedSecret)
+	derivedSecret = KdfExpand(ephemeralSecret, tDerive, KdfOutLength)
 
 	// FS = F2(ES', K_e)
-	prfFinalCombiner.Reset()
-	_, _ = prfFinalCombiner.Write(sharedKemSecret)
-	finalSecret = prfFinalCombiner.Sum(nil)
-
-	// F1(FS, ...)
-	prfFinalSecret = hmac.New(sha256.New, finalSecret)
+	finalSecret = PrfCombine(derivedSecret, sharedKemSecret.Bytes())
 
 	// context = pk_S | c_S | pk_e | c_e | protoID
 	var context bytes.Buffer
 	context.Write(serverOkemPublicKey.Bytes())
-	context.Write(okemCiphertext)
+	context.Write(okemCiphertext.Bytes())
 	context.Write(clientKemPublicKey.Bytes())
-	context.Write(kemCiphertext)
+	context.Write(kemCiphertext.Bytes())
 	context.Write(protoID)
 
 	// skey = F1(FS, context | ":key_extract")
-	prfFinalSecret.Reset()
-	_, _ = prfFinalSecret.Write(context.Bytes())
-	_, _ = prfFinalSecret.Write(tSKey)
-	keySeed = (*KeySeed)(prfFinalSecret.Sum(nil))
+	keySeed = (*KeySeed)(KdfExpand(finalSecret, append(context.Bytes(), tSKey...), KdfOutLength))
 
 	// auth = F1(FS, context | ":server_mac")
-	prfFinalSecret.Reset()
-	_, _ = prfFinalSecret.Write(context.Bytes())
-	_, _ = prfFinalSecret.Write(tKeyVerify)
-	auth = (*Auth)(prfFinalSecret.Sum(nil))
+	auth = (*Auth)(KdfExpand(finalSecret, append(context.Bytes(), tKeyVerify...), KdfOutLength))
 
 	return keySeed, auth
 }
@@ -272,6 +210,7 @@ func MessageMAC(ephermalSecret []byte, isClient bool, msg []byte, epochHour int6
 // KdfExpand expands pseudorandomKey via HKDF-SHA256 and returns `okm_len` bytes
 // of key material. pseudorandomKey must be a strong pseudorandom cryptographic key.
 // Info is an arbitrary identifier for the output, repeated key-info pairs will yield the same output.
+// Corresponds to F_1 from https://eprint.iacr.org/2025/408.pdf
 func KdfExpand(pseudorandomKey []byte, info []byte, okmLen int) []byte {
 	kdf := hkdf.Expand(sha256.New, pseudorandomKey, info)
 	okm := make([]byte, okmLen)
@@ -283,6 +222,16 @@ func KdfExpand(pseudorandomKey []byte, info []byte, okmLen int) []byte {
 	}
 
 	return okm
+}
+
+// PrfCombine combines input1 and input2 via HMAC-SHA256 and returns key material.
+// Repeated input pairs will yield the same output.
+// Corresponds to F_2 from https://eprint.iacr.org/2025/408.pdf
+func PrfCombine(input1 []byte, input2 []byte) []byte {
+	prf := hmac.New(sha256.New, input1)
+	prf.Reset()
+	_, _ = prf.Write(input2)
+	return prf.Sum(nil)
 }
 
 // Expands the key to appropriate length using KdfExpand, then XORs with the message.

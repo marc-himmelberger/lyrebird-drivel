@@ -34,7 +34,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
@@ -49,19 +48,48 @@ import (
 const (
 	maxHandshakeLength = 8192
 
-	clientMinPadLength       = (serverMinHandshakeLength + inlineSeedFrameLength) - clientMinHandshakeLength
-	clientMaxPadLength       = maxHandshakeLength - clientMinHandshakeLength
-	clientMinHandshakeLength = drivelcrypto.RepresentativeLength + markLength + macLength
-
-	serverMinPadLength       = 0
-	serverMaxPadLength       = maxHandshakeLength - (serverMinHandshakeLength + inlineSeedFrameLength)
-	serverMinHandshakeLength = drivelcrypto.RepresentativeLength + drivelcrypto.AuthLength + markLength + macLength
-
 	inlineSeedFrameLength = framing.FrameOverhead + packetOverhead + seedPacketPayloadLength
 
 	markLength = sha256.Size
 	macLength  = sha256.Size
 )
+
+type lengthDetails struct {
+	epkLength int
+	ectLength int
+	csLength  int
+
+	clientMinHandshakeLength int // epk_e | c_S | M_C | MAC_C
+	serverMinHandshakeLength int // ect_e | auth | M_S | MAC_S
+
+	clientMinPadLength int
+	clientMaxPadLength int
+
+	serverMinPadLength int
+	serverMaxPadLength int
+}
+
+func getLengthDetails(okem okems.ObfuscatedKem, kem kems.KeyEncapsulationMechanism) *lengthDetails {
+	details := new(lengthDetails)
+
+	details.epkLength = kem.LengthPublicKey()
+	details.ectLength = kem.LengthCiphertext()
+	details.csLength = okem.LengthCiphertext()
+
+	details.clientMinHandshakeLength = details.epkLength + details.csLength + markLength + macLength
+	details.serverMinHandshakeLength = details.ectLength + drivelcrypto.AuthLength + markLength + macLength
+
+	// Pad to send at least as much data as smallest server response with inlineSeedFrameLength added
+	details.clientMinPadLength = (details.serverMinHandshakeLength + inlineSeedFrameLength) - details.clientMinHandshakeLength
+	// No minimum amound of padding in server response
+	details.serverMinPadLength = 0
+
+	// Pad to at most maxHandshakeLength and allow for inlineSeedFrameLength in server response
+	details.clientMaxPadLength = maxHandshakeLength - details.clientMinHandshakeLength
+	details.serverMaxPadLength = maxHandshakeLength - (details.serverMinHandshakeLength + inlineSeedFrameLength)
+
+	return details
+}
 
 // Define string constants for info/context inputs to HMAC and HKDF
 var protoID = []byte("Drivel")
@@ -117,8 +145,9 @@ func (e *InvalidAuthError) Error() string {
 // client between sending and receiving its messages.
 type clientHandshake struct {
 	// Interface references for employed schemes
-	okem okems.ObfuscatedKem
-	kem  kems.KeyEncapsulationMechanism
+	okem          okems.ObfuscatedKem
+	kem           kems.KeyEncapsulationMechanism
+	lengthDetails *lengthDetails
 
 	// already present in obfs4, set during newClientHandshake
 
@@ -149,7 +178,8 @@ func newClientHandshake(
 	hs.keypair = sessionKey
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity
-	hs.padLen = csrand.IntRange(clientMinPadLength, clientMaxPadLength) // XXX change distribution?
+	hs.lengthDetails = getLengthDetails(okem, kem)
+	hs.padLen = csrand.IntRange(hs.lengthDetails.clientMinPadLength, hs.lengthDetails.clientMaxPadLength) // XXX change distribution?
 
 	return hs
 }
@@ -183,10 +213,7 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 	}
 
 	// Derive ephemeral secret from NodeID and OKEM shared secret
-	prfSessionCombiner := hmac.New(sha256.New, hs.nodeID.Bytes()[:])
-	prfSessionCombiner.Reset()
-	_, _ = prfSessionCombiner.Write(shared.Bytes())
-	hs.ephemeralSecret = prfSessionCombiner.Sum(nil)
+	hs.ephemeralSecret = drivelcrypto.PrfCombine(hs.nodeID.Bytes()[:], shared.Bytes())
 
 	// Derive encryption keys from ephemeral secret using KDF and different info values
 	hs.encryptionKey1 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc1, drivelcrypto.KdfOutLength)
@@ -280,8 +307,9 @@ func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error
 // server and is analogous to clientHandshake.
 type serverHandshake struct {
 	// Interface references for employed schemes
-	okem okems.ObfuscatedKem
-	kem  kems.KeyEncapsulationMechanism
+	okem          okems.ObfuscatedKem
+	kem           kems.KeyEncapsulationMechanism
+	lengthDetails *lengthDetails
 
 	// already present in obfs4, set during newServerHandshake
 
@@ -291,15 +319,20 @@ type serverHandshake struct {
 
 	// new additions in Drivel, only set in parseClientHandshake
 
-	encClientKemPublicKey []byte // epk_e
-	clientMark            []byte // M_C
+	encClientKemPublicKey []byte                     // epk_e
+	okemCiphertext        okems.ObfuscatedCiphertext // c_S
+	clientMark            []byte                     // M_C
 
 	ephemeralSecret []byte // ES
 	encryptionKey1  []byte // EK_1
 	encryptionKey2  []byte // EK_2
 
+	encClientKemCiphertext []byte            // ect_e
+	kemSharedSecret        kems.SharedSecret // ES'
+
 	// already present in obfs4, but only set in parseClientHandshake
-	epochHour int64
+	epochHour  int64
+	serverAuth *drivelcrypto.Auth
 }
 
 func newServerHandshake(
@@ -311,29 +344,28 @@ func newServerHandshake(
 	hs.kem = kem
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity
-	hs.padLen = csrand.IntRange(serverMinPadLength, serverMaxPadLength)
+	hs.lengthDetails = getLengthDetails(okem, kem)
+	hs.padLen = csrand.IntRange(hs.lengthDetails.serverMinPadLength, hs.lengthDetails.serverMaxPadLength)
 
 	return hs
 }
 
 func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilter, resp []byte) ([]byte, error) {
 	// INFO this receives a client message and parses it!
+	// Copy for brevity
+	epkLength := hs.lengthDetails.epkLength
+	csLength := hs.lengthDetails.csLength
 
 	// No point in examining the data unless the miminum plausible response has
 	// been received.
-	if clientMinHandshakeLength > len(resp) {
+	if hs.lengthDetails.clientMinHandshakeLength > len(resp) {
 		return nil, ErrMarkNotFoundYet
 	}
 
-	// First, set ephemeralSecret, encClientKemPublicKey and clientMark
+	// First, set ephemeralSecret, encClientKemPublicKey and clientMark.
+	// Then also set encryptionKey1, encryptionKey2
 	if hs.ephemeralSecret == nil {
-		var okemCiphertext okems.ObfuscatedCiphertext // c_S
-
 		// Pull out message before padding: epk_e | c_S
-		epkLength := hs.kem.LengthPublicKey()
-		csLength := hs.okem.LengthCiphertext()
-		// TODO lift this up together with non-constant length constants
-
 		hs.encClientKemPublicKey = make([]byte, epkLength)
 		okemCtxt := make([]byte, csLength)
 
@@ -344,27 +376,27 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 		if err != nil {
 			return nil, err
 		}
-		okemCiphertext = okems.ObfuscatedCiphertext(cd)
+		hs.okemCiphertext = okems.ObfuscatedCiphertext(cd)
 
 		// Decapsulate with OKEM
-		shared, err := hs.okem.Decaps(hs.serverIdentity.Private(), okemCiphertext)
+		shared, err := hs.okem.Decaps(hs.serverIdentity.Private(), hs.okemCiphertext)
 		if err != nil {
 			return nil, err
 		}
 
 		// Derive ephemeral secret from NodeID and OKEM shared secret
-		prfSessionCombiner := hmac.New(sha256.New, hs.nodeID.Bytes()[:])
-		prfSessionCombiner.Reset()
-		_, _ = prfSessionCombiner.Write(shared.Bytes())
-		hs.ephemeralSecret = prfSessionCombiner.Sum(nil)
+		hs.ephemeralSecret = drivelcrypto.PrfCombine(hs.nodeID.Bytes()[:], shared.Bytes())
+
+		// Derive encryption keys from ephemeral secret using KDF and different info values
+		hs.encryptionKey1 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc1, drivelcrypto.KdfOutLength)
+		hs.encryptionKey2 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc2, drivelcrypto.KdfOutLength)
 
 		// Derive the mark.
 		hs.clientMark = drivelcrypto.MessageMark(hs.ephemeralSecret, true, resp[0:epkLength+csLength])
 	}
 
-	// TODO UPDATE CODE FROM HERE
 	// Attempt to find the mark + MAC.
-	pos := findMarkMac(hs.clientMark, resp, drivelcrypto.RepresentativeLength+clientMinPadLength,
+	pos := findMarkMac(hs.clientMark, resp, (epkLength+csLength)+hs.lengthDetails.clientMinPadLength,
 		maxHandshakeLength, true)
 	if pos == -1 {
 		if len(resp) >= maxHandshakeLength {
@@ -373,15 +405,11 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 		return nil, ErrMarkNotFoundYet
 	}
 
-	// Validate the MAC.
+	// Validate the MAC.  Allow epoch to be off by up to a hour in either direction.
 	macFound := false
+	epochHour := getEpochHour()
 	for _, off := range []int64{0, -1, 1} {
-		// Allow epoch to be off by up to a hour in either direction.
-		epochHour := []byte(strconv.FormatInt(getEpochHour()+int64(off), 10))
-		hs.mac.Reset()
-		_, _ = hs.mac.Write(resp[:pos+markLength])
-		_, _ = hs.mac.Write(epochHour)
-		macCmp := hs.mac.Sum(nil)[:macLength]
+		macCmp := drivelcrypto.MessageMAC(hs.ephemeralSecret, true, resp[:pos+markLength], epochHour+off)
 		macRx := resp[pos+markLength : pos+markLength+macLength]
 		if hmac.Equal(macCmp, macRx) {
 			// Ensure that this handshake has not been seen previously.
@@ -411,13 +439,29 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 		return nil, ErrInvalidHandshake
 	}
 
-	clientPublic := hs.clientRepresentative.ToPublic()
-	ok, seed, auth := drivelcrypto.ServerHandshake(clientPublic, hs.keypair,
-		hs.serverIdentity, hs.nodeID)
-	if !ok {
-		return nil, ErrDrivelcryptoFailed
+	// Decrypt client KEM public key
+	publicBytes := drivelcrypto.XorEncryptDecrypt(hs.encryptionKey1, hs.encClientKemPublicKey)
+	cd, err := cryptodata.New(publicBytes, epkLength)
+	if err != nil {
+		return nil, err
 	}
-	hs.serverAuth = auth
+	clientKemPublicKey := kems.PublicKey(cd)
+
+	// Encapsulate with KEM against client
+
+	var kemCiphertext kems.Ciphertext // c_E
+
+	kemCiphertext, hs.kemSharedSecret, err = hs.kem.Encaps(clientKemPublicKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// Encrypt KEM ciphertext
+	hs.encClientKemCiphertext = drivelcrypto.XorEncryptDecrypt(hs.encryptionKey2, kemCiphertext.Bytes())
+
+	var seed *drivelcrypto.KeySeed
+	seed, hs.serverAuth = drivelcrypto.DrivelCommon(hs.ephemeralSecret, hs.kemSharedSecret, hs.serverIdentity.Public(),
+		hs.okemCiphertext, clientKemPublicKey, kemCiphertext)
 
 	return seed.Bytes()[:], nil
 }
