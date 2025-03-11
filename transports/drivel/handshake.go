@@ -91,7 +91,7 @@ func getLengthDetails(okem okems.ObfuscatedKem, kem kems.KeyEncapsulationMechani
 	return details
 }
 
-// Define string constants for info/context inputs to HMAC and HKDF
+// Define string constants for info/context inputs to HKDF
 var protoID = []byte("Drivel")
 var mExpandEnc1 = append(protoID, []byte(":enckey1")...)
 var mExpandEnc2 = append(protoID, []byte(":enckey2")...)
@@ -196,8 +196,8 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 	//  * c_S is the (obfuscated) OKEM ciphertext.
 	//  * P_C is [clientMinPadLength,clientMaxPadLength] bytes of random padding.
 	// XXX change?
-	//  * M_C is a "mark" computed as HMAC-SHA256(ES, epk_e | c_S| ":mc")
-	//  * MAC_C is HMAC-SHA256(ES, epk_e | ... | E | ":mac_c")
+	//  * M_C is a "mark" computed as HKDF-SHA256(ES, epk_e | c_S| ":mc")
+	//  * MAC_C is HKDF-SHA256(ES, epk_e | ... | E | ":mac_c")
 	//  * E is the string representation of the number of hours since the UNIX epoch.
 
 	// Generate the padding
@@ -468,21 +468,18 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 
 func (hs *serverHandshake) generateHandshake() ([]byte, error) {
 	// INFO this uses a parsed client message to send a response!
+	var err error
+	var serverMark []byte // M_S
+	var serverMac []byte  // MAC_S
 
-	var buf bytes.Buffer
-
-	hs.mac.Reset()
-	_, _ = hs.mac.Write(hs.keypair.Public().Bytes())
-	mark := hs.mac.Sum(nil)[:markLength]
-
-	// The server handshake is Y | AUTH | P_S | M_S | MAC(Y | AUTH | P_S | M_S | E) where:
-	//  * Y is the server's ephemeral Curve25519 public key representative.
+	// The server handshake is ect_e | AUTH | P_S | M_S | MAC(ect_e | AUTH | P_S | M_S | E) where:
+	//  * ect_e is the encrypted KEM ciphertext.
 	//  * AUTH is the drivelcrypto handshake AUTH value.
 	//  * P_S is [serverMinPadLength,serverMaxPadLength] bytes of random padding.
-	//  * M_S is HMAC-SHA256-128(serverIdentity | NodeID, Y)
-	//  * MAC is HMAC-SHA256-128(serverIdentity | NodeID, Y .... E)
-	//  * E is the string representation of the number of hours since the UNIX
-	//    epoch.
+	// XXX: Change?
+	//  * M_S is a "mark" computed as HKDF-SHA256(ES, ect_e | ":ms")
+	//  * MAC_S is HKDF-SHA256(ES, ect_e | ... | E | ":mac_s")
+	//  * E is the string representation of the number of hours since the UNIX epoch.
 
 	// Generate the padding
 	pad, err := makePad(hs.padLen)
@@ -490,17 +487,26 @@ func (hs *serverHandshake) generateHandshake() ([]byte, error) {
 		return nil, err
 	}
 
-	// Write Y, AUTH, P_S, M_S.
-	buf.Write(hs.keypair.Public().Bytes())
-	buf.Write(hs.serverAuth.Bytes()[:])
-	buf.Write(pad)
-	buf.Write(mark)
+	// buf will be used to construct the final message
+	var buf bytes.Buffer
 
-	// Calculate and write the MAC.
-	hs.mac.Reset()
-	_, _ = hs.mac.Write(buf.Bytes())
-	_, _ = hs.mac.Write(hs.epochHour) // Set in hs.parseClientHandshake()
-	buf.Write(hs.mac.Sum(nil)[:macLength])
+	// Start building message as ect_e
+	buf.Write(hs.encClientKemCiphertext)
+
+	// Derive mark before adding AUTH and padding
+	serverMark = drivelcrypto.MessageMark(hs.ephemeralSecret, false, buf.Bytes())
+
+	// Continue building message with auth | P_S | M_S
+	buf.Write(hs.serverAuth[:])
+	buf.Write(pad)
+	buf.Write(serverMark)
+
+	// Generate MAC over entire message
+	// epochHour was set in hs.parseClientHandshake()
+	serverMac = drivelcrypto.MessageMAC(hs.ephemeralSecret, false, buf.Bytes(), hs.epochHour)
+
+	// Complete message with mac
+	buf.Write(serverMac)
 
 	return buf.Bytes(), nil
 }

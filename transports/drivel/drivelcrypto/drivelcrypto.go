@@ -60,8 +60,10 @@ const (
 	KdfOutLength = sha256.Size
 )
 
-// Define string constants for info/context inputs to HMAC and HKDF
+// Define string constants for info/context inputs to HKDF
 var protoID = []byte("Drivel")
+
+// XXX: Remove protoID from info values?
 var tMarkClient = append(protoID, []byte(":mc")...)
 var tMarkServer = append(protoID, []byte(":ms")...)
 var tMacClient = append(protoID, []byte(":mac_c")...)
@@ -69,7 +71,7 @@ var tMacServer = append(protoID, []byte(":mac_s")...)
 var tDerive = append(protoID, []byte(":derive_key")...)
 var tSKey = append(protoID, []byte(":key_extract")...)
 var tKeyVerify = append(protoID, []byte(":server_mac")...)
-var mXorExpand = append(protoID, []byte(":enc_expand")...)
+var tXorExpand = append(protoID, []byte(":enc_expand")...)
 
 // NodeIDLengthError is the error returned when the node ID being imported is
 // an invalid length.
@@ -186,7 +188,7 @@ func MessageMark(ephermalSecret []byte, isClient bool, msgMark []byte) (mark []b
 	return KdfExpand(ephermalSecret, infoBuf.Bytes(), KdfOutLength)
 }
 
-// MessageMAC computes a MAC with HMAC-SHA-256 over the entire `msg` (should include the mark)
+// MessageMAC computes a MAC with HKDF-SHA256 over the entire `msg` (should include the mark)
 // followed by tMacClient or tMacServer respectively (depending on the value of `isClient`).
 // The argument `epochHour` is also integrated into the MAC and should not be sent alongside the message.
 func MessageMAC(ephermalSecret []byte, isClient bool, msg []byte, epochHour int64) (mac []byte) {
@@ -238,7 +240,7 @@ func PrfCombine(input1 []byte, input2 []byte) []byte {
 // This performs symmetric encryption/decryption and may hide structure within a message.
 // However, this function MUST NOT be called twice with the same key.
 func XorEncryptDecrypt(key []byte, message []byte) []byte {
-	expanded := KdfExpand(key, mXorExpand, len(message))
+	expanded := KdfExpand(key, tXorExpand, len(message))
 	n := subtle.XORBytes(expanded, expanded, message)
 	if n != len(message) {
 		panic(fmt.Sprintf("BUG: XOR encrypt/decrypt got truncated output: %d", n))
