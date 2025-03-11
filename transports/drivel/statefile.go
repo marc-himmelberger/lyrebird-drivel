@@ -35,7 +35,6 @@ import (
 	"os"
 	"path"
 	"strconv"
-	"strings"
 
 	pt "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/goptlib"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
@@ -48,9 +47,6 @@ import (
 const (
 	stateFile  = "drivel_state.json"
 	bridgeFile = "drivel_bridgeline.txt"
-
-	certSuffix = "=="
-	certLength = drivelcrypto.NodeIDLength + drivelcrypto.PublicKeyLength
 )
 
 type jsonServerState struct {
@@ -61,16 +57,21 @@ type jsonServerState struct {
 	IATMode    int    `json:"iat-mode"`
 }
 
+// Number of bytes in a valid drivelServerCert for the given OKEM
+func getCertLength(okem okems.ObfuscatedKem) int {
+	return drivelcrypto.NodeIDLength + okem.LengthPublicKey()
+}
+
 type drivelServerCert struct {
 	raw []byte
 }
 
 func (cert *drivelServerCert) String() string {
-	return strings.TrimSuffix(base64.StdEncoding.EncodeToString(cert.raw), certSuffix)
+	return base64.StdEncoding.EncodeToString(cert.raw)
 }
 
 func (cert *drivelServerCert) unpack(okem okems.ObfuscatedKem) (*drivelcrypto.NodeID, okems.PublicKey) {
-	if len(cert.raw) != certLength {
+	if len(cert.raw) != getCertLength(okem) {
 		panic(fmt.Sprintf("cert length %d is invalid", len(cert.raw)))
 	}
 
@@ -86,13 +87,13 @@ func (cert *drivelServerCert) unpack(okem okems.ObfuscatedKem) (*drivelcrypto.No
 	return nodeID, okems.PublicKey(pub)
 }
 
-func serverCertFromString(encoded string) (*drivelServerCert, error) {
-	decoded, err := base64.StdEncoding.DecodeString(encoded + certSuffix)
+func serverCertFromString(okem okems.ObfuscatedKem, encoded string) (*drivelServerCert, error) {
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode cert: %s", err)
 	}
 
-	if len(decoded) != certLength {
+	if len(decoded) != getCertLength(okem) {
 		return nil, fmt.Errorf("cert length %d is invalid", len(decoded))
 	}
 

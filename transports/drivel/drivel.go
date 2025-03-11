@@ -176,7 +176,7 @@ func (cf *drivelClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 	// for the Node ID and Public Key.
 	certStr, ok := args.Get(certArg)
 	if ok {
-		cert, err := serverCertFromString(certStr)
+		cert, err := serverCertFromString(okemScheme, certStr)
 		if err != nil {
 			return nil, err
 		}
@@ -383,7 +383,7 @@ func (conn *drivelConn) clientHandshake(args *drivelClientArgs) error {
 		_ = conn.receiveBuffer.Next(n)
 
 		// Use the derived key material to intialize the link crypto.
-		okm := drivelcrypto.KdfExpand(seed, framing.KeyLength*2, mExpand)
+		okm := drivelcrypto.KdfExpand(seed, mExpand, framing.KeyLength*2)
 		conn.encoder = framing.NewEncoder(okm[:framing.KeyLength])
 		conn.decoder = framing.NewDecoder(okm[framing.KeyLength:])
 
@@ -426,7 +426,7 @@ func (conn *drivelConn) serverHandshake(sf *drivelServerFactory) error {
 		}
 
 		// Use the derived key material to intialize the link crypto.
-		okm := drivelcrypto.KdfExpand(seed, framing.KeyLength*2, mExpand)
+		okm := drivelcrypto.KdfExpand(seed, mExpand, framing.KeyLength*2)
 		conn.encoder = framing.NewEncoder(okm[framing.KeyLength:])
 		conn.decoder = framing.NewDecoder(okm[:framing.KeyLength])
 
