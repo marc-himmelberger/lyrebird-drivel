@@ -21,12 +21,17 @@ import (
 	"testing"
 
 	"filippo.io/edwards25519/field"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 	"golang.org/x/crypto/curve25519"
 )
 
 func TestX25519Ell2(t *testing.T) {
 	t.Run("Constants", testConstants)
 	t.Run("KeyExchage", testKeyExchange)
+	t.Run("Encode", testEncode)
+	t.Run("KemExchange", testKemExchange)
+	t.Run("OkemExchange", testOkemExchange)
 }
 
 func testConstants(t *testing.T) {
@@ -123,6 +128,130 @@ func testKeyExchange(t *testing.T) {
 	}
 
 	t.Logf("good: %d, bad: %d", good, bad)
+}
+
+func testEncode(t *testing.T) {
+	var bufPublicKey [32]byte
+	var bufRepresentative [32]byte
+
+	kem := X25519KEM{}
+	encoder := Elligator2Encoder{}
+
+	obfCtxt := make([]byte, encoder.LengthObfuscatedCiphertext())
+
+	// Test all 8 possible tweak values (only lowest and highest two bits are used)
+	for tweak_lo := 0; tweak_lo < 2; tweak_lo++ {
+		for tweak_hi_1 := 0; tweak_hi_1 < 2; tweak_hi_1++ {
+			for tweak_hi_2 := 0; tweak_hi_2 < 2; tweak_hi_2++ {
+				tweak := byte((tweak_hi_2 << 7) | (tweak_hi_1 << 6) | tweak_lo)
+
+				// Generate 64 keypairs and check consistency
+				for i := 0; i < 64; i++ {
+					keypair := kem.KeyGen()
+
+					// a) generate public key and representative via ScalarBaseMult function
+					isEncodeable1 := ScalarBaseMult(&bufPublicKey, &bufRepresentative, (*[32]byte)(keypair.Private().Bytes()), tweak)
+
+					// b) generate representative via Encode code with the same, fixed, tweak
+					isEncodeable2 := encoder.EncodeCiphertext(obfCtxt, keypair.Public().Bytes())
+
+					if isEncodeable1 != isEncodeable2 {
+						t.Fatalf("encodeability mismatch: expected %v, actual: %v", isEncodeable1, isEncodeable2)
+					}
+					if !bytes.Equal(bufPublicKey[:], keypair.Public().Bytes()) {
+						t.Fatalf("public key mismatch: expected %x, actual: %x", bufPublicKey, keypair.Public().Bytes())
+					}
+					if !bytes.Equal(bufRepresentative[:], obfCtxt) {
+						t.Fatalf("representative mismatch: expected %x, actual: %x", bufRepresentative, obfCtxt)
+					}
+				}
+			}
+		}
+	}
+}
+
+func testKemExchange(t *testing.T) {
+	kem := X25519KEM{}
+
+	for i := 0; i < 1000; i++ {
+		// Fix a server keypair from KeyGen
+		keypairServer := kem.KeyGen()
+
+		var privateKeyServer [32]byte
+		copy(privateKeyServer[:], keypairServer.Private().Bytes())
+
+		// a) Simulate OKEM operation
+		kemCtxt, kemSharedClient, err := kem.Encaps(keypairServer.Public())
+		if err != nil {
+			t.Fatal("Encaps(pk) failed:", err)
+		}
+		kemSharedServer, err := kem.Decaps(keypairServer.Private(), kemCtxt)
+		if err != nil {
+			t.Fatal("Decaps(sk, c) failed:", err)
+		}
+		if !bytes.Equal(kemSharedClient.Bytes(), kemSharedServer.Bytes()) {
+			t.Fatalf("correctness violation: expected %x, actual: %x", kemSharedClient.Bytes(), kemSharedServer.Bytes())
+		}
+
+		// b) Simulate old x25519ell2 operation
+		var sharedServer [32]byte
+
+		curve25519.ScalarMult(&sharedServer, &privateKeyServer, (*[32]byte)(kemCtxt.Bytes())) //nolint: staticcheck
+
+		if !bytes.Equal(sharedServer[:], kemSharedServer.Bytes()) {
+			t.Fatalf("interop failure: expected %x, actual: %x", sharedServer, kemSharedServer.Bytes())
+		}
+	}
+}
+
+func testOkemExchange(t *testing.T) {
+	kem := X25519KEM{}
+	encoder := Elligator2Encoder{}
+
+	for i := 0; i < 1000; i++ {
+		// Fix a server keypair from KeyGen
+		keypairServer := kem.KeyGen()
+
+		var privateKeyServer [32]byte
+		copy(privateKeyServer[:], keypairServer.Private().Bytes())
+
+		// a) Simulate OKEM operation
+		kemCtxt, kemSharedClient, err := kem.Encaps(keypairServer.Public())
+		if err != nil {
+			t.Fatal("Encaps(pk) failed:", err)
+		}
+		// encode
+		okemCtxt := make([]byte, encoder.LengthObfuscatedCiphertext())
+		if !encoder.EncodeCiphertext(okemCtxt, kemCtxt.Bytes()) {
+			t.Logf("bad: %x", kemCtxt)
+			continue
+		}
+		t.Logf("good: %x", kemCtxt)
+		// decode
+		ctxt := make([]byte, kem.LengthCiphertext())
+		encoder.DecodeCiphertext(ctxt, okemCtxt)
+		kemCtxt2, err := cryptodata.New(ctxt, kem.LengthCiphertext())
+		if err != nil {
+			t.Fatal("cryptodata.New(ctxt) failed:", err)
+		}
+		okemSharedServer, err := kem.Decaps(keypairServer.Private(), kems.Ciphertext(kemCtxt2))
+		if err != nil {
+			t.Fatal("Decaps(sk, c) failed:", err)
+		}
+		if !bytes.Equal(kemSharedClient.Bytes(), okemSharedServer.Bytes()) {
+			t.Fatalf("correctness violation: expected %x, actual: %x", kemSharedClient.Bytes(), okemSharedServer.Bytes())
+		}
+
+		// b) Simulate old x25519ell2 operation
+		var sharedServer, pkFromRep [32]byte
+		RepresentativeToPublicKey(&pkFromRep, (*[32]byte)(okemCtxt))
+
+		curve25519.ScalarMult(&sharedServer, &privateKeyServer, &pkFromRep) //nolint: staticcheck
+
+		if !bytes.Equal(sharedServer[:], okemSharedServer.Bytes()) {
+			t.Fatalf("interop failure: expected %x, actual: %x", sharedServer, okemSharedServer.Bytes())
+		}
+	}
 }
 
 func BenchmarkKeyGeneration(b *testing.B) {

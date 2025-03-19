@@ -27,64 +27,157 @@
 
 package cryptofactory
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
-// TestKemCorrectness tests keypair generation for all KEMs.
+// TestKemCorrectness tests correctness for all KEMs.
 func TestKemCorrectness(t *testing.T) {
-	// Test KEMs
-	for kem in list_of_all_KEMs {
-		// KeyGen
-		keypair, err := NewKeypair(false)
-		if err != nil {
-			t.Fatal("NewKeypair(false) failed:", err)
-		}
-		if keypair == nil {
-			t.Fatal("NewKeypair(false) returned nil")
-		}
-		if keypair.HasElligator() {
-			t.Fatal("NewKeypair(false) has a Elligator representative")
-		}
+	kemNames := KemNames()
+	t.Log("Testing KEMs:", kemNames)
 
-		// Encaps
-
-		// Decaps
+	for _, kemName := range kemNames {
+		t.Run(kemName, func(t *testing.T) {
+			for i := 0; i < 1000; i++ {
+				testSingleKemCorrectness(t, kemName)
+			}
+		})
 	}
 }
 
-// TestOkemCorrectness tests keypair generation for all KEMs.
-func TestOkemCorrectness(t *testing.T)
+// testSingleKemCorrectness tests correctness for one run of one KEM.
+func testSingleKemCorrectness(t *testing.T, kemName string) {
+	kem := NewKem(kemName)
 
-// BenchmarkKeyGen tests keypair generation for all KEMs.
-func BenchmarkKeyGen(t *testing.T)
+	// KeyGen
+	keypair := kem.KeyGen()
+	if keypair == nil {
+		t.Fatal("KeyGen() returned nil")
+	}
 
-// BenchmarkEncaps tests keypair generation for all KEMs.
-func BenchmarkEncaps(t *testing.T)
+	// Encaps
+	ctxt, sharedSecret1, err := kem.Encaps(keypair.Public())
+	if err != nil {
+		t.Fatal("kem.Encaps(pk) failed:", err)
+	}
 
-// BenchmarkDecaps tests keypair generation for all KEMs.
-func BenchmarkDecaps(t *testing.T)
+	// Decaps
+	sharedSecret2, err := kem.Decaps(keypair.Private(), ctxt)
+	if err != nil {
+		t.Fatal("kem.Decaps(sk, c) failed:", err)
+	}
+	if !bytes.Equal(sharedSecret1.Bytes(), sharedSecret2.Bytes()) {
+		t.Fatalf("correctness violation: expected %x, actual: %x", sharedSecret1.Bytes(), sharedSecret2.Bytes())
+	}
+}
 
-// TODO this is only here for reference on how to do runtime-selection of benchmark inputs
-func BenchmarkAppendFloat(b *testing.B) {
-    benchmarks := []struct{
-        name    string
-        float   float64
-        fmt     byte
-        prec    int
-        bitSize int
-    }{
-        {"Decimal", 33909, 'g', -1, 64},
-        {"Float", 339.7784, 'g', -1, 64},
-        {"Exp", -5.09e75, 'g', -1, 64},
-        {"NegExp", -5.11e-95, 'g', -1, 64},
-        {"Big", 123456789123456789123456789, 'g', -1, 64},
-        ...
-    }
-    dst := make([]byte, 30)
-    for _, bm := range benchmarks {
-        b.Run(bm.name, func(b *testing.B) {
-            for i := 0; i < b.N; i++ {
-                AppendFloat(dst[:0], bm.float, bm.fmt, bm.prec, bm.bitSize)
-            }
-        })
-    }
+// TestOkemCorrectness tests correctness for all OKEMs.
+func TestOkemCorrectness(t *testing.T) {
+	okemNames := OkemNames()
+	t.Log("Testing OKEMs:", okemNames)
+
+	for _, okemName := range okemNames {
+		t.Run(okemName, func(t *testing.T) {
+			for i := 0; i < 1000; i++ {
+				testSingleOkemCorrectness(t, okemName)
+			}
+		})
+	}
+}
+
+// testSingleOkemCorrectness tests correctness for one run of one OKEM.
+func testSingleOkemCorrectness(t *testing.T, okemName string) {
+	okem := NewOkem(okemName)
+
+	// KeyGen
+	keypair := okem.KeyGen()
+	if keypair == nil {
+		t.Fatal("KeyGen() returned nil")
+	}
+
+	// Encaps
+	ctxt, sharedSecret1, err := okem.Encaps(keypair.Public())
+	if err != nil {
+		t.Fatal("kem.Encaps(pk) failed:", err)
+	}
+
+	// Decaps
+	sharedSecret2, err := okem.Decaps(keypair.Private(), ctxt)
+	if err != nil {
+		t.Fatal("kem.Decaps(sk, c) failed:", err)
+	}
+	if !bytes.Equal(sharedSecret1.Bytes(), sharedSecret2.Bytes()) {
+		t.Fatalf("correctness violation: expected %x, actual: %x", sharedSecret1.Bytes(), sharedSecret2.Bytes())
+	}
+}
+
+// BenchmarkKems benchmarks KeyGen, Encaps, Decaps for all KEMs.
+func BenchmarkKems(b *testing.B) {
+	kemNames := KemNames()
+	b.Log("Benchmarking KEMs:", kemNames)
+
+	for _, kemName := range kemNames {
+		kem := NewKem(kemName)
+
+		b.Run(kemName+"-KeyGen", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				kem.KeyGen()
+			}
+		})
+		b.Run(kemName+"-Encaps", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				kp := kem.KeyGen()
+				b.StartTimer()
+
+				kem.Encaps(kp.Public())
+			}
+		})
+		b.Run(kemName+"-Decaps", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				kp := kem.KeyGen()
+				c, _, _ := kem.Encaps(kp.Public())
+				b.StartTimer()
+
+				kem.Decaps(kp.Private(), c)
+			}
+		})
+	}
+}
+
+// BenchmarkOkems benchmarks KeyGen, Encaps, Decaps for all OKEMs.
+func BenchmarkOkems(b *testing.B) {
+	okemNames := OkemNames()
+	b.Log("Benchmarking OKEMs:", okemNames)
+
+	for _, okemName := range okemNames {
+		okem := NewOkem(okemName)
+
+		b.Run(okemName+"-KeyGen", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				okem.KeyGen()
+			}
+		})
+		b.Run(okemName+"-Encaps", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				kp := okem.KeyGen()
+				b.StartTimer()
+
+				okem.Encaps(kp.Public())
+			}
+		})
+		b.Run(okemName+"-Decaps", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				kp := okem.KeyGen()
+				c, _, _ := okem.Encaps(kp.Public())
+				b.StartTimer()
+
+				okem.Decaps(kp.Private(), c)
+			}
+		})
+	}
 }

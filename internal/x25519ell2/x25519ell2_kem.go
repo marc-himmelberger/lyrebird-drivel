@@ -115,7 +115,7 @@ func (kem *X25519KEM) Encaps(public kems.PublicKey) (kems.Ciphertext, kems.Share
 	keypair := kem.KeyGen()
 
 	// Client side uses EXP(B,x)
-	curve25519.ScalarMult(&sharedSecretArr, (*[32]byte)(keypair.Private().Bytes()), pkArr)
+	curve25519.ScalarMult(&sharedSecretArr, (*[32]byte)(keypair.Private().Bytes()), pkArr) //nolint: staticcheck
 	notOk := constantTimeIsZero(sharedSecretArr[:])
 	if notOk != 0 {
 		// bad server public keys can provoke this
@@ -157,7 +157,7 @@ func (kem *X25519KEM) Decaps(private kems.PrivateKey, ciphertext kems.Ciphertext
 	copy(publicBuf[:], u.Bytes())
 
 	// Client side uses EXP(B,x)
-	curve25519.ScalarMult(&sharedSecretArr, privArr, &publicBuf)
+	curve25519.ScalarMult(&sharedSecretArr, privArr, &publicBuf) //nolint: staticcheck
 	notOk := constantTimeIsZero(sharedSecretArr[:])
 	if notOk != 0 {
 		// bad server public keys can provoke this
