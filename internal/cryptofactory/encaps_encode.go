@@ -93,13 +93,13 @@ func (ete *EncapsThenEncodeOKEM) Encaps(public okems.PublicKey) (okems.Obfuscate
 	public.AssertSize(ete.kem.LengthPublicKey())
 	kemPublicKey := (kems.PublicKey)(public)
 
-	kemCiphertext, sharedSecret, err := ete.kem.Encaps(kemPublicKey)
-	if err != nil {
-		return okems.ObfuscatedCiphertext(cryptodata.Nil), okems.SharedSecret(cryptodata.Nil), err
-	}
-
-	obfCtxt := make([]byte, ete.encoder.LengthObfuscatedCiphertext())
 	for {
+		kemCiphertext, sharedSecret, err := ete.kem.Encaps(kemPublicKey)
+		if err != nil {
+			return okems.ObfuscatedCiphertext(cryptodata.Nil), okems.SharedSecret(cryptodata.Nil), err
+		}
+
+		obfCtxt := make([]byte, ete.encoder.LengthObfuscatedCiphertext())
 
 		ok := ete.encoder.EncodeCiphertext(obfCtxt, kemCiphertext.Bytes())
 		if !ok {
