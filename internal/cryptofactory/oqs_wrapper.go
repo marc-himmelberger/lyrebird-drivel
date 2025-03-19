@@ -44,6 +44,8 @@ func init() {
 	log.Infof("OQS - supported KEMs: %s", supportedKEMs)
 	oqsEnabledKEMs = oqs.EnabledKEMs()
 	log.Infof("OQS - enabled KEMs:   %s", oqsEnabledKEMs)
+
+	allKemNames = append(allKemNames, oqsEnabledKEMs...)
 }
 
 // Wraps an [oqs.KeyEncapsulation] to conform to [kems.KeyEncapsulationMechanism]

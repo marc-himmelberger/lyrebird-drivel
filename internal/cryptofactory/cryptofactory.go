@@ -37,6 +37,36 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/x25519ell2"
 )
 
+// Atomic KEMs. Additional KEMs are added by oqs_wrapper.go
+var allKemNames = []string{
+	"x25519",
+}
+
+// List of all supported KEM names.
+func KemNames() []string {
+	res := make([]string, len(allKemNames))
+	copy(res, allKemNames)
+	return res
+}
+
+// List of all supported KEM names.
+func OkemNames() []string {
+	allOkemNames := make([]string, 0, len(allKemNames))
+	for _, kemName := range KemNames() {
+		if slices.Contains(allEncodedKems, kemName) {
+			allOkemNames = append(allOkemNames, etePrefix+kemName)
+		}
+	}
+	return allOkemNames
+}
+
+const etePrefix = "EtE-"
+
+// All KEMs for which encoders are available. This list must not be modified.
+var allEncodedKems = []string{
+	"x25519",
+}
+
 /*
 Constructs a KEM scheme given a name.
 Legal values for names are:
@@ -63,10 +93,13 @@ Legal values for names are:
     valid names for [okems.NewOkem]
 */
 func NewOkem(okemName string) okems.ObfuscatedKem {
-	if strings.HasPrefix(okemName, "EtE-") {
+	if strings.HasPrefix(okemName, etePrefix) {
 		// "EtE-<kem_name>" if "<kem_name>" is a valid name for [kems.NewKem]
 		// Construct KEM
-		kemName := okemName[4:]
+		kemName := okemName[len(etePrefix):]
+		if !slices.Contains(allEncodedKems, kemName) {
+			panic("cryptofactory: no encoding mapped for KEM " + kemName)
+		}
 		kem := NewKem(kemName)
 		// Select encoder
 		// TODO: cover more implementations from https://github.com/open-quantum-safe/liboqs/blob/main/src/kem/kem.h#L42
@@ -77,7 +110,7 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 		//case "KEM1", "KEM2":
 		//	encoder = Kem1Encoder{}
 		default:
-			panic("cryptofactory: no encoding mapped for KEM " + kemName)
+			panic("cryptofactory: contradictory 'allEncodedKems' and switch-case " + kemName)
 		}
 		// Combine
 		return &EncapsThenEncodeOKEM{kem, encoder}
