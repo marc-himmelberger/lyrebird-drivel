@@ -3,6 +3,7 @@ module gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird
 require (
 	filippo.io/edwards25519 v1.1.0
 	github.com/dchest/siphash v1.2.3
+	github.com/open-quantum-safe/liboqs-go v0.0.0-20250119172907-28b5301df438
 	github.com/refraction-networking/utls v1.6.7
 	gitlab.com/yawning/edwards25519-extra v0.0.0-20231005122941-2149dcafc266
 	gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/goptlib v1.6.0
@@ -36,7 +37,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
 	github.com/klauspost/reedsolomon v1.12.4 // indirect
 	github.com/miekg/dns v1.1.62 // indirect
-	github.com/open-quantum-safe/liboqs-go v0.0.0-20250119172907-28b5301df438 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
 	github.com/pion/dtls/v2 v2.2.12 // indirect
