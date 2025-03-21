@@ -79,3 +79,5 @@ require (
 )
 
 go 1.22.0
+
+replace github.com/open-quantum-safe/liboqs-go => ../liboqs-go
