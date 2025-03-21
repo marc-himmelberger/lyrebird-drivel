@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/log"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
@@ -164,6 +165,7 @@ func newClientHandshake(
 	nodeID *drivelcrypto.NodeID, serverIdentity okems.PublicKey,
 	sessionKey *kems.Keypair,
 ) *clientHandshake {
+	log.Infof("creating clientHandshake")
 	hs := new(clientHandshake)
 	hs.okem = okem
 	hs.kem = kem
@@ -177,6 +179,7 @@ func newClientHandshake(
 }
 
 func (hs *clientHandshake) generateHandshake() ([]byte, error) {
+	log.Infof("clientHandshake.generateHandshake()")
 	var err error
 	var encClientKemPublicKey []byte // epk_e
 	var clientMark []byte            // M_C
@@ -246,6 +249,7 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 // Upon success, it returns the number of bytes read and the KEY_SEED.
 // Trailing bytes may contain another message, such as an inlineSeedFrame.
 func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error) {
+	log.Infof("clientHandshake.parseServerHandshake(%d B)", len(resp))
 	// INFO this verifies the final server message!
 	// Copy for brevity
 	ectLength := hs.lengthDetails.ectLength
@@ -351,6 +355,8 @@ func newServerHandshake(
 	okem okems.ObfuscatedKem, kem kems.KeyEncapsulationMechanism,
 	nodeID *drivelcrypto.NodeID, serverIdentity *okems.Keypair,
 ) *serverHandshake {
+	log.Infof("creating serverHandshake")
+
 	hs := new(serverHandshake)
 	hs.okem = okem
 	hs.kem = kem
@@ -368,6 +374,7 @@ func newServerHandshake(
 // The message is fully consumed.
 func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilter, resp []byte) ([]byte, error) {
 	// INFO this receives a client message and parses it!
+	log.Infof("serverHandshake.parseClientHandshake(%d B)", len(resp))
 	// Copy for brevity
 	epkLength := hs.lengthDetails.epkLength
 	csLength := hs.lengthDetails.csLength
@@ -481,6 +488,7 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 
 func (hs *serverHandshake) generateHandshake() ([]byte, error) {
 	// INFO this uses a parsed client message to send a response!
+	log.Infof("serverHandshake.generateHandshake()")
 	var err error
 	var serverMark []byte // M_S
 	var serverMac []byte  // MAC_S

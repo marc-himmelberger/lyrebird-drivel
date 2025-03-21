@@ -72,7 +72,8 @@ Constructs a KEM scheme given a name.
 Legal values for names are:
   - "x25519" for a wrapper around the corresponding obfs4 implementation without obfuscation,
     but suitable for elligator2 encoding provided via [okems.NewOkem] as "EtE-x25519"
-  - Any valid name for a KEM enabled in the open-quantum-safe library
+  - Any valid name for a KEM enabled in the open-quantum-safe library.
+    These can be viewed via KemNames().
 */
 func NewKem(kemName string) kems.KeyEncapsulationMechanism {
 	if kemName == "x25519" {

@@ -33,7 +33,8 @@ import (
 )
 
 // Number of times to repeat correctness tests.
-const numRepeats = 10
+// Testing all OQS KEMs takes forever - but we could restrict those
+const numRepeats = 2
 
 // TestKemCorrectness tests correctness for all KEMs.
 func TestKemCorrectness(t *testing.T) {

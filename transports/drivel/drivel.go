@@ -44,6 +44,7 @@ import (
 
 	pt "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/goptlib"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/drbg"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/log"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/probdist"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory"
@@ -349,6 +350,7 @@ func (conn *drivelConn) clientHandshake(args *drivelClientArgs) error {
 	}
 
 	// INFO this sends the first client message!
+	log.Infof("This client has started a handshake")
 
 	// Generate a new keypair
 	sessionKey := args.kem.KeyGen()
@@ -387,6 +389,8 @@ func (conn *drivelConn) clientHandshake(args *drivelClientArgs) error {
 		conn.encoder = framing.NewEncoder(okm[:framing.KeyLength])
 		conn.decoder = framing.NewDecoder(okm[framing.KeyLength:])
 
+		log.Infof("This client has completed a handshake and has wrapped its connection")
+
 		return nil
 	}
 }
@@ -395,6 +399,8 @@ func (conn *drivelConn) serverHandshake(sf *drivelServerFactory) error {
 	if !conn.isServer {
 		return fmt.Errorf("serverHandshake called on client connection")
 	}
+
+	log.Infof("This server has received a first handshake message")
 
 	// Generate the server handshake, and arm the base timeout.
 	hs := newServerHandshake(sf.okem, sf.kem, sf.nodeID, sf.identityKey)
@@ -429,6 +435,8 @@ func (conn *drivelConn) serverHandshake(sf *drivelServerFactory) error {
 		okm := drivelcrypto.KdfExpand(seed, mExpand, framing.KeyLength*2)
 		conn.encoder = framing.NewEncoder(okm[framing.KeyLength:])
 		conn.decoder = framing.NewDecoder(okm[:framing.KeyLength])
+
+		log.Infof("This server has completed a handshake and has wrapped its connection")
 
 		break
 	}
@@ -507,7 +515,7 @@ func (conn *drivelConn) Write(b []byte) (n int, err error) {
 		if err != nil {
 			return 0, err
 		} else if rdLen == 0 {
-			panic(fmt.Sprintf("BUG: Write(), chopping length was 0"))
+			panic("BUG: Write(), chopping length was 0")
 		}
 		n += rdLen
 
@@ -565,7 +573,7 @@ func (conn *drivelConn) Write(b []byte) (n int, err error) {
 			if err != nil {
 				return 0, err
 			} else if iatWrLen == 0 {
-				panic(fmt.Sprintf("BUG: Write(), iat length was 0"))
+				panic("BUG: Write(), iat length was 0")
 			}
 
 			// Calculate the delay.  The delay resolution is 100 usec, leading

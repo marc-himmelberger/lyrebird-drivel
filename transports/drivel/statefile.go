@@ -214,9 +214,7 @@ func newJSONServerState(stateDir string, js *jsonServerState, okem okems.Obfusca
 	if st.nodeID, err = drivelcrypto.NewNodeID(rawID); err != nil {
 		return
 	}
-	if st.identityKey = okem.KeyGen(); err != nil {
-		return
-	}
+	st.identityKey = okem.KeyGen()
 	if st.drbgSeed, err = drbg.NewSeed(); err != nil {
 		return
 	}
