@@ -42,10 +42,8 @@ func (encoder *Elligator2Encoder) LengthObfuscatedCiphertext() int {
 	return RepresentativeLength
 }
 
-// Pieced together from /lyrebird/common/ntor/ntor.go
-// Takes an unobfuscated public key (not a representative), and
-// gives out an obfuscated public key (as a corresponding representative)
-func (encoder *Elligator2Encoder) EncodeCiphertext(obfCiphertext []byte, kemCiphertext []byte) (ok bool) {
+// Utility function, added for fixed-tweak test cases. Used in EncodeCiphertext.
+func (encoder *Elligator2Encoder) encodeCiphertextWithTweak(obfCiphertext []byte, kemCiphertext []byte, tweak byte) (ok bool) {
 	// Convert kemCiphertext back to field element u
 	// XXX: this requires u to be (for all intents and purposes) invariant under u.SetBytes(u.Bytes())
 	pkArr := (*[PublicKeyLength]byte)(kemCiphertext)
@@ -57,14 +55,20 @@ func (encoder *Elligator2Encoder) EncodeCiphertext(obfCiphertext []byte, kemCiph
 		panic("internal/x25519: failed to deserialize representative: " + err.Error())
 	}
 
-	// Generate tweak and encode u
+	return uToRepresentative((*[32]byte)(obfCiphertext), &u, tweak)
+}
+
+// Pieced together from /lyrebird/common/ntor/ntor.go
+// Takes an unobfuscated public key (not a representative), and
+// gives out an obfuscated public key (as a corresponding representative)
+func (encoder *Elligator2Encoder) EncodeCiphertext(obfCiphertext []byte, kemCiphertext []byte) (ok bool) {
+	// Generate tweak and call internal function
 	var tweak [1]byte
 	if err := csrand.Bytes(tweak[:]); err != nil {
 		panic("x25519ell2: Could not read enough randomness: " + err.Error())
 	}
 
-	return uToRepresentative((*[32]byte)(obfCiphertext), &u, tweak[0])
-
+	return encoder.encodeCiphertextWithTweak(obfCiphertext, kemCiphertext, tweak[0])
 }
 
 // Pieced together from /lyrebird/common/ntor/ntor.go

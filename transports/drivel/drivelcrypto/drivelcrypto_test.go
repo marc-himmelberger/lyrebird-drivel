@@ -41,10 +41,17 @@ const (
 	maxOkmLen = 256
 )
 
+// Number of times to repeat handshake tests.
+const numRepeats = 100
+
 // Test Client/Server handshake.
 func TestHandshake(t *testing.T) {
-	csrand.Rand.Seed(1234)
+	for range numRepeats {
+		testHandshake(t)
+	}
+}
 
+func testHandshake(t *testing.T) {
 	var pseudorandomKey = make([]byte, 32)
 	var info = make([]byte, 16)
 
@@ -97,7 +104,7 @@ func TestHandshake(t *testing.T) {
 	if len(encMsg) != len(msg2) {
 		t.Fatal("Failed to do symmetric decryption: wrong output length")
 	}
-	if 0 != bytes.Compare(msg, msg2) {
+	if !bytes.Equal(msg, msg2) {
 		t.Fatal("Failed to do symmetric decryption: message mismatch after decryption")
 	}
 
@@ -116,7 +123,7 @@ func TestHandshake(t *testing.T) {
 	if len(markServer) != KdfOutLength {
 		t.Fatal("Failed to make server mark: wrong output length")
 	}
-	if 0 == bytes.Compare(msg, msg2) {
+	if bytes.Equal(markClient, markServer) {
 		t.Fatal("Failed to make marks: marks match between client/server")
 	}
 
@@ -136,7 +143,7 @@ func TestHandshake(t *testing.T) {
 	if len(macServer) != KdfOutLength {
 		t.Fatal("Failed to make server mac: wrong output length")
 	}
-	if 0 == bytes.Compare(msg, msg2) {
+	if bytes.Equal(macClient, macServer) {
 		t.Fatal("Failed to make macs: macs match between client/server")
 	}
 

@@ -76,8 +76,8 @@ const (
 	maxCloseDelay = 60
 
 	// The proper way would be to add a TOR_PT_CLIENT_TRANSPORT_OPTIONS
-	kemName  = "dhkem"
-	okemName = "dhkem_ell2"
+	kemName  = "x25519"
+	okemName = "EtE-x25519"
 )
 
 const (

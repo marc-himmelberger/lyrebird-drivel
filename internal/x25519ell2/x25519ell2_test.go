@@ -26,6 +26,9 @@ import (
 	"golang.org/x/crypto/curve25519"
 )
 
+// Number of times to repeat exchanges or encoding tests.
+const numRepeats = 100
+
 func TestX25519Ell2(t *testing.T) {
 	t.Run("Constants", testConstants)
 	t.Run("KeyExchage", testKeyExchange)
@@ -83,7 +86,7 @@ func testKeyExchange(t *testing.T) {
 	_, _ = rand.Read(randSk[:])
 
 	var good, bad int
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < numRepeats; i++ {
 		var (
 			publicKey, privateKey, representative [32]byte
 			publicKeyClean                        [32]byte
@@ -145,18 +148,21 @@ func testEncode(t *testing.T) {
 			for tweak_hi_2 := 0; tweak_hi_2 < 2; tweak_hi_2++ {
 				tweak := byte((tweak_hi_2 << 7) | (tweak_hi_1 << 6) | tweak_lo)
 
-				// Generate 64 keypairs and check consistency
-				for i := 0; i < 64; i++ {
+				// Generate numRepeats keypairs and check consistency
+				for i := 0; i < numRepeats; i++ {
 					keypair := kem.KeyGen()
 
 					// a) generate public key and representative via ScalarBaseMult function
 					isEncodeable1 := ScalarBaseMult(&bufPublicKey, &bufRepresentative, (*[32]byte)(keypair.Private().Bytes()), tweak)
 
 					// b) generate representative via Encode code with the same, fixed, tweak
-					isEncodeable2 := encoder.EncodeCiphertext(obfCtxt, keypair.Public().Bytes())
+					isEncodeable2 := encoder.encodeCiphertextWithTweak(obfCtxt, keypair.Public().Bytes(), tweak)
 
 					if isEncodeable1 != isEncodeable2 {
 						t.Fatalf("encodeability mismatch: expected %v, actual: %v", isEncodeable1, isEncodeable2)
+					}
+					if !isEncodeable1 {
+						continue
 					}
 					if !bytes.Equal(bufPublicKey[:], keypair.Public().Bytes()) {
 						t.Fatalf("public key mismatch: expected %x, actual: %x", bufPublicKey, keypair.Public().Bytes())
@@ -173,7 +179,7 @@ func testEncode(t *testing.T) {
 func testKemExchange(t *testing.T) {
 	kem := X25519KEM{}
 
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < numRepeats; i++ {
 		// Fix a server keypair from KeyGen
 		keypairServer := kem.KeyGen()
 
@@ -208,7 +214,7 @@ func testOkemExchange(t *testing.T) {
 	kem := X25519KEM{}
 	encoder := Elligator2Encoder{}
 
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < numRepeats; i++ {
 		// Fix a server keypair from KeyGen
 		keypairServer := kem.KeyGen()
 

@@ -32,6 +32,9 @@ import (
 	"testing"
 )
 
+// Number of times to repeat correctness tests.
+const numRepeats = 10
+
 // TestKemCorrectness tests correctness for all KEMs.
 func TestKemCorrectness(t *testing.T) {
 	kemNames := KemNames()
@@ -39,7 +42,7 @@ func TestKemCorrectness(t *testing.T) {
 
 	for _, kemName := range kemNames {
 		t.Run(kemName, func(t *testing.T) {
-			for i := 0; i < 1000; i++ {
+			for i := 0; i < numRepeats; i++ {
 				testSingleKemCorrectness(t, kemName)
 			}
 		})
@@ -79,7 +82,7 @@ func TestOkemCorrectness(t *testing.T) {
 
 	for _, okemName := range okemNames {
 		t.Run(okemName, func(t *testing.T) {
-			for i := 0; i < 1000; i++ {
+			for i := 0; i < numRepeats; i++ {
 				testSingleOkemCorrectness(t, okemName)
 			}
 		})

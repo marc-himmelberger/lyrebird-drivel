@@ -48,6 +48,9 @@ func TestHandshakeDrivelcryptoClient(t *testing.T) {
 
 	// Test client handshake padding.
 	for l := lengthDetails.clientMinPadLength; l <= lengthDetails.clientMaxPadLength; l++ {
+		t.Logf("%d / %d", l-lengthDetails.clientMinPadLength,
+			lengthDetails.clientMaxPadLength-lengthDetails.clientMinPadLength)
+
 		// Generate the client state and override the pad length.
 		clientHs := newClientHandshake(okem, kem, nodeID, idKeypair.Public(), clientKeypair)
 		clientHs.padLen = l
@@ -93,7 +96,7 @@ func TestHandshakeDrivelcryptoClient(t *testing.T) {
 		}
 
 		// Ensure the derived shared secret is the same.
-		if 0 != bytes.Compare(clientSeed, serverSeed) {
+		if !bytes.Equal(clientSeed, serverSeed) {
 			t.Fatalf("[%d:0] client/server seed mismatch", l)
 		}
 	}
@@ -137,6 +140,9 @@ func TestHandshakeDrivelcryptoServer(t *testing.T) {
 
 	// Test server handshake padding.
 	for l := lengthDetails.serverMinPadLength; l <= lengthDetails.serverMaxPadLength+inlineSeedFrameLength; l++ {
+		t.Logf("%d / %d", l-lengthDetails.serverMinPadLength,
+			lengthDetails.serverMaxPadLength+inlineSeedFrameLength-lengthDetails.serverMinPadLength)
+
 		// Generate the client state and override the pad length.
 		clientHs := newClientHandshake(okem, kem, nodeID, idKeypair.Public(), clientKeypair)
 		clientHs.padLen = lengthDetails.clientMinPadLength
@@ -176,7 +182,7 @@ func TestHandshakeDrivelcryptoServer(t *testing.T) {
 		}
 
 		// Ensure the derived shared secret is the same.
-		if 0 != bytes.Compare(clientSeed, serverSeed) {
+		if !bytes.Equal(clientSeed, serverSeed) {
 			t.Fatalf("[%d:1] client/server seed mismatch", l)
 		}
 	}
@@ -270,7 +276,7 @@ func BenchmarkHandshake(b *testing.B) {
 			b.Fatal("ClientHandshake is nil")
 		}
 		if len(msg1) < clientHs.lengthDetails.clientMinHandshakeLength {
-			b.Fatal("ClientHandshake is too short: %d bytes, expected at least %d",
+			b.Fatalf("ClientHandshake is too short: %d bytes, expected at least %d",
 				len(msg1), clientHs.lengthDetails.clientMinHandshakeLength)
 		}
 
@@ -288,7 +294,7 @@ func BenchmarkHandshake(b *testing.B) {
 			b.Fatal("ServerHandshake derived nil KEY_SEED")
 		}
 		if len(keySeedServer) != drivelcrypto.KeySeedLength {
-			b.Fatal("ServerHandshake KEY_SEED is wrong length: %d bytes, expected %d",
+			b.Fatalf("ServerHandshake KEY_SEED is wrong length: %d bytes, expected %d",
 				len(keySeedServer), drivelcrypto.KeySeedLength)
 		}
 
@@ -301,7 +307,7 @@ func BenchmarkHandshake(b *testing.B) {
 			b.Fatal("ServerHandshake is nil")
 		}
 		if len(msg2) < clientHs.lengthDetails.serverMinHandshakeLength {
-			b.Fatal("ServerHandshake is too short: %d bytes, expected at least %d",
+			b.Fatalf("ServerHandshake is too short: %d bytes, expected at least %d",
 				len(msg2), clientHs.lengthDetails.serverMinHandshakeLength)
 		}
 
@@ -314,7 +320,7 @@ func BenchmarkHandshake(b *testing.B) {
 			b.Fatal("ClientHandshake derived nil KEY_SEED")
 		}
 		if len(keySeedClient) != drivelcrypto.KeySeedLength {
-			b.Fatal("ClientHandshake KEY_SEED is wrong length: %d bytes, expected %d",
+			b.Fatalf("ClientHandshake KEY_SEED is wrong length: %d bytes, expected %d",
 				len(keySeedClient), drivelcrypto.KeySeedLength)
 		}
 
