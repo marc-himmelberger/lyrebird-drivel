@@ -28,7 +28,18 @@ handshake variants without being obscenely slow is non-trivial.
 
 ### Dependencies
 
-Build time library dependencies are handled by the Go module automatically.
+To install liboqs dependencies, follow the instructions at [liboqs-go](https://github.com/open-quantum-safe/liboqs-go#installation).
+
+```bash
+# On Ubuntu
+sudo apt install astyle cmake gcc ninja-build python3-pytest python3-pytest-xdist unzip xsltproc doxygen graphviz python3-yaml valgrind pkg-config
+
+# On macOS
+brew install cmake ninja wget doxygen graphviz astyle valgrind
+pip3 install pytest pytest-xdist pyyaml
+```
+
+Other build time library dependencies are handled by the Go module automatically.
 
 If you are on Go versions earlier than 1.11, you might need to run `go get -d
 ./...` to download all the dependencies. Note however, that modules always use
@@ -46,6 +57,7 @@ To build:
 
 To install, copy `./lyrebird` to a permanent location
 (Eg: `/usr/local/bin`)
+TODO possibly also requires runtime dependencies?
 
 Client side torrc configuration:
 ```
