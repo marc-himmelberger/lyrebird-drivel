@@ -30,7 +30,10 @@ liboqs-go: liboqs
 	go mod tidy
 
 test: clean liboqs liboqs-go
-	go test -ldflags="-X main.lyrebirdVersion=$(VERSION)" ./...
+	go test -vet=all -ldflags="-X main.lyrebirdVersion=$(VERSION)" ./...
+
+bench: clean liboqs liboqs-go
+	go test -run='^$$' -bench=. -benchmem -ldflags="-X main.lyrebirdVersion=$(VERSION)" ./...
 
 build: clean liboqs liboqs-go
 	go build -ldflags="-X main.lyrebirdVersion=$(VERSION)" ./cmd/lyrebird

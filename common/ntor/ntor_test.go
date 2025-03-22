@@ -275,10 +275,9 @@ func BenchmarkHandshake(b *testing.B) {
 	if err != nil {
 		b.Fatal("Failed to load NodeId:", err)
 	}
-	b.ResetTimer()
 
 	// Start the actual benchmark.
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Generate the keypairs.
 		serverKeypair, err := NewKeypair(true)
 		if err != nil || serverKeypair == nil {

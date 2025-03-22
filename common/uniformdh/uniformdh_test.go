@@ -169,7 +169,7 @@ func TestHandshake(t *testing.T) {
 // peer is half of the reported time as this does 2 key generation an
 // handshake operations.
 func BenchmarkHandshake(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		xX, err := GenerateKey(rand.Reader)
 		if err != nil {
 			b.Fatal("Failed to generate xX keypair", err)

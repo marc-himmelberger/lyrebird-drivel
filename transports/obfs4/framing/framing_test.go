@@ -147,9 +147,8 @@ func BenchmarkEncoder_Encode(b *testing.B) {
 	var frame [MaximumSegmentLength]byte
 	payload := make([]byte, 1024*1024)
 	encoder := NewEncoder(generateRandomKey())
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		transfered := 0
 		buffer := bytes.NewBuffer(payload)
 		for 0 < buffer.Len() {

@@ -35,6 +35,7 @@ func TestX25519Ell2(t *testing.T) {
 	t.Run("Encode", testEncode)
 	t.Run("KemExchange", testKemExchange)
 	t.Run("OkemExchange", testOkemExchange)
+	t.Run("IdempotentBytes", testIdempotentBytes)
 }
 
 func testConstants(t *testing.T) {
@@ -86,7 +87,7 @@ func testKeyExchange(t *testing.T) {
 	_, _ = rand.Read(randSk[:])
 
 	var good, bad int
-	for i := 0; i < numRepeats; i++ {
+	for range numRepeats {
 		var (
 			publicKey, privateKey, representative [32]byte
 			publicKeyClean                        [32]byte
@@ -149,7 +150,7 @@ func testEncode(t *testing.T) {
 				tweak := byte((tweak_hi_2 << 7) | (tweak_hi_1 << 6) | tweak_lo)
 
 				// Generate numRepeats keypairs and check consistency
-				for i := 0; i < numRepeats; i++ {
+				for range numRepeats {
 					keypair := kem.KeyGen()
 
 					// a) generate public key and representative via ScalarBaseMult function
@@ -179,7 +180,7 @@ func testEncode(t *testing.T) {
 func testKemExchange(t *testing.T) {
 	kem := X25519KEM{}
 
-	for i := 0; i < numRepeats; i++ {
+	for range numRepeats {
 		// Fix a server keypair from KeyGen
 		keypairServer := kem.KeyGen()
 
@@ -214,7 +215,7 @@ func testOkemExchange(t *testing.T) {
 	kem := X25519KEM{}
 	encoder := Elligator2Encoder{}
 
-	for i := 0; i < numRepeats; i++ {
+	for range numRepeats {
 		// Fix a server keypair from KeyGen
 		keypairServer := kem.KeyGen()
 
@@ -260,6 +261,29 @@ func testOkemExchange(t *testing.T) {
 	}
 }
 
+func testIdempotentBytes(t *testing.T) {
+	var privateKey [32]byte
+
+	for range numRepeats {
+		_, _ = rand.Read(privateKey[:])
+
+		u1 := scalarBaseMultDirty(&privateKey)
+		b1 := u1.Bytes()
+		var u2 field.Element
+		if _, err := u2.SetBytes(b1); err != nil {
+			t.Fatal("SetBytes(b) failed:", err)
+		}
+		b2 := u2.Bytes()
+
+		if u1.Equal(&u2) != 1 {
+			t.Fatalf("idempotence violation: expected %x, actual: %x", u1, u2)
+		}
+		if !bytes.Equal(b1, b2) {
+			t.Fatalf("idempotence violation: expected %x, actual: %x", b1, b2)
+		}
+	}
+}
+
 func BenchmarkKeyGeneration(b *testing.B) {
 	var publicKey, representative, privateKey [32]byte
 
@@ -271,8 +295,7 @@ func BenchmarkKeyGeneration(b *testing.B) {
 		}
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ScalarBaseMult(&publicKey, &representative, &privateKey, 0)
 	}
 }
@@ -281,8 +304,7 @@ func BenchmarkMap(b *testing.B) {
 	var publicKey, representative [32]byte
 	_, _ = rand.Reader.Read(representative[:])
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		RepresentativeToPublicKey(&publicKey, &representative)
 	}
 }

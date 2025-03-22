@@ -43,7 +43,7 @@ func TestKemCorrectness(t *testing.T) {
 
 	for _, kemName := range kemNames {
 		t.Run(kemName, func(t *testing.T) {
-			for i := 0; i < numRepeats; i++ {
+			for range numRepeats {
 				testSingleKemCorrectness(t, kemName)
 			}
 		})
@@ -83,7 +83,7 @@ func TestOkemCorrectness(t *testing.T) {
 
 	for _, okemName := range okemNames {
 		t.Run(okemName, func(t *testing.T) {
-			for i := 0; i < numRepeats; i++ {
+			for range numRepeats {
 				testSingleOkemCorrectness(t, okemName)
 			}
 		})
@@ -125,26 +125,20 @@ func BenchmarkKems(b *testing.B) {
 		kem := NewKem(kemName)
 
 		b.Run(kemName+"-KeyGen", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				kem.KeyGen()
 			}
 		})
 		b.Run(kemName+"-Encaps", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				b.StopTimer()
-				kp := kem.KeyGen()
-				b.StartTimer()
-
+			kp := kem.KeyGen()
+			for b.Loop() {
 				kem.Encaps(kp.Public())
 			}
 		})
 		b.Run(kemName+"-Decaps", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				b.StopTimer()
-				kp := kem.KeyGen()
-				c, _, _ := kem.Encaps(kp.Public())
-				b.StartTimer()
-
+			kp := kem.KeyGen()
+			c, _, _ := kem.Encaps(kp.Public())
+			for b.Loop() {
 				kem.Decaps(kp.Private(), c)
 			}
 		})
@@ -160,26 +154,20 @@ func BenchmarkOkems(b *testing.B) {
 		okem := NewOkem(okemName)
 
 		b.Run(okemName+"-KeyGen", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				okem.KeyGen()
 			}
 		})
 		b.Run(okemName+"-Encaps", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				b.StopTimer()
-				kp := okem.KeyGen()
-				b.StartTimer()
-
+			kp := okem.KeyGen()
+			for b.Loop() {
 				okem.Encaps(kp.Public())
 			}
 		})
 		b.Run(okemName+"-Decaps", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				b.StopTimer()
-				kp := okem.KeyGen()
-				c, _, _ := okem.Encaps(kp.Public())
-				b.StartTimer()
-
+			kp := okem.KeyGen()
+			c, _, _ := okem.Encaps(kp.Public())
+			for b.Loop() {
 				okem.Decaps(kp.Private(), c)
 			}
 		})
