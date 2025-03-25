@@ -173,6 +173,7 @@ func newClientHandshake(
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity
 	hs.lengthDetails = getLengthDetails(okem, kem)
+	log.Infof("padding range [%d, %d]", hs.lengthDetails.clientMinPadLength, hs.lengthDetails.clientMaxPadLength)
 	hs.padLen = csrand.IntRange(hs.lengthDetails.clientMinPadLength, hs.lengthDetails.clientMaxPadLength) // XXX change distribution?
 
 	return hs
@@ -249,8 +250,8 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 // Upon success, it returns the number of bytes read and the KEY_SEED.
 // Trailing bytes may contain another message, such as an inlineSeedFrame.
 func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error) {
-	log.Infof("clientHandshake.parseServerHandshake(%d B)", len(resp))
 	// INFO this verifies the final server message!
+	log.Infof("clientHandshake.parseServerHandshake(%d B)", len(resp))
 	// Copy for brevity
 	ectLength := hs.lengthDetails.ectLength
 	authLength := hs.lengthDetails.authLength
@@ -356,13 +357,13 @@ func newServerHandshake(
 	nodeID *drivelcrypto.NodeID, serverIdentity *okems.Keypair,
 ) *serverHandshake {
 	log.Infof("creating serverHandshake")
-
 	hs := new(serverHandshake)
 	hs.okem = okem
 	hs.kem = kem
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity
 	hs.lengthDetails = getLengthDetails(okem, kem)
+	log.Infof("padding range [%d, %d]", hs.lengthDetails.serverMinPadLength, hs.lengthDetails.serverMaxPadLength)
 	hs.padLen = csrand.IntRange(hs.lengthDetails.serverMinPadLength, hs.lengthDetails.serverMaxPadLength)
 
 	return hs

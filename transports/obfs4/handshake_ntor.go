@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/log"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/ntor"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/obfs4/framing"
@@ -123,10 +124,12 @@ type clientHandshake struct {
 }
 
 func newClientHandshake(nodeID *ntor.NodeID, serverIdentity *ntor.PublicKey, sessionKey *ntor.Keypair) *clientHandshake {
+	log.Infof("creating clientHandshake")
 	hs := new(clientHandshake)
 	hs.keypair = sessionKey
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity
+	log.Infof("padding range [%d, %d]", clientMinPadLength, clientMaxPadLength)
 	hs.padLen = csrand.IntRange(clientMinPadLength, clientMaxPadLength)
 	hs.mac = hmac.New(sha256.New, append(hs.serverIdentity.Bytes()[:], hs.nodeID.Bytes()[:]...))
 
@@ -134,6 +137,7 @@ func newClientHandshake(nodeID *ntor.NodeID, serverIdentity *ntor.PublicKey, ses
 }
 
 func (hs *clientHandshake) generateHandshake() ([]byte, error) {
+	log.Infof("clientHandshake.generateHandshake()")
 	var buf bytes.Buffer
 
 	hs.mac.Reset()
@@ -170,6 +174,7 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 }
 
 func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error) {
+	log.Infof("clientHandshake.parseServerHandshake(%d B)", len(resp))
 	// No point in examining the data unless the miminum plausible response has
 	// been received.
 	if serverMinHandshakeLength > len(resp) {
@@ -238,10 +243,12 @@ type serverHandshake struct {
 }
 
 func newServerHandshake(nodeID *ntor.NodeID, serverIdentity *ntor.Keypair, sessionKey *ntor.Keypair) *serverHandshake {
+	log.Infof("creating serverHandshake")
 	hs := new(serverHandshake)
 	hs.keypair = sessionKey
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity
+	log.Infof("padding range [%d, %d]", serverMinPadLength, serverMaxPadLength)
 	hs.padLen = csrand.IntRange(serverMinPadLength, serverMaxPadLength)
 	hs.mac = hmac.New(sha256.New, append(hs.serverIdentity.Public().Bytes()[:], hs.nodeID.Bytes()[:]...))
 
@@ -249,6 +256,7 @@ func newServerHandshake(nodeID *ntor.NodeID, serverIdentity *ntor.Keypair, sessi
 }
 
 func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilter, resp []byte) ([]byte, error) {
+	log.Infof("serverHandshake.parseClientHandshake(%d B)", len(resp))
 	// No point in examining the data unless the miminum plausible response has
 	// been received.
 	if clientMinHandshakeLength > len(resp) {
@@ -326,6 +334,7 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 }
 
 func (hs *serverHandshake) generateHandshake() ([]byte, error) {
+	log.Infof("serverHandshake.generateHandshake()")
 	var buf bytes.Buffer
 
 	hs.mac.Reset()
