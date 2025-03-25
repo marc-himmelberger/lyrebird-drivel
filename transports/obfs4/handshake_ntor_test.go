@@ -246,3 +246,96 @@ func TestHandshakeNtorServer(t *testing.T) {
 		t.Fatalf("clientHandshake.parseServerHandshake() succeded (oversized)")
 	}
 }
+
+// Benchmark Client/Server handshake.  The actual time taken that will be
+// observed on either the Client or Server is half the reported time per
+// operation since the benchmark does both sides.
+func BenchmarkObfs4Handshake(b *testing.B) {
+	// Generate the "long lasting" identity key and NodeId.
+	idKeypair, err := ntor.NewKeypair(false)
+	if err != nil || idKeypair == nil {
+		b.Fatal("Failed to generate identity keypair")
+	}
+	nodeID, err := ntor.NewNodeID([]byte("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13"))
+	if err != nil {
+		b.Fatal("Failed to load NodeId:", err)
+	}
+
+	// Start the actual benchmark.
+	for b.Loop() {
+		// Generate the keypairs.
+		serverKeypair, err := ntor.NewKeypair(true)
+		if err != nil || serverKeypair == nil {
+			b.Fatal("Failed to generate server keypair")
+		}
+
+		clientKeypair, err := ntor.NewKeypair(true)
+		if err != nil || clientKeypair == nil {
+			b.Fatal("Failed to generate client keypair")
+		}
+
+		// Client sends first message
+		clientHs := newClientHandshake(nodeID, idKeypair.Public(), clientKeypair)
+		msg1, err := clientHs.generateHandshake()
+		if err != nil {
+			b.Fatal("ClientHandshake failed", err)
+		}
+		if msg1 == nil {
+			b.Fatal("ClientHandshake is nil")
+		}
+		if len(msg1) < clientMinHandshakeLength {
+			b.Fatalf("ClientHandshake is too short: %d bytes, expected at least %d",
+				len(msg1), clientMinHandshakeLength)
+		}
+
+		// Server receives message
+		filter, err := replayfilter.New(replayTTL)
+		if err != nil {
+			b.Fatal("ServerHandshake failed to create replay filter", err)
+		}
+		serverHs := newServerHandshake(nodeID, idKeypair, serverKeypair)
+		keySeedServer, err := serverHs.parseClientHandshake(filter, msg1)
+		if err != nil {
+			b.Fatal("ServerHandshake failed to parse", err)
+		}
+		if keySeedServer == nil {
+			b.Fatal("ServerHandshake derived nil KEY_SEED")
+		}
+		if len(keySeedServer) != ntor.KeySeedLength {
+			b.Fatalf("ServerHandshake KEY_SEED is wrong length: %d bytes, expected %d",
+				len(keySeedServer), ntor.KeySeedLength)
+		}
+
+		// Server responds
+		msg2, err := serverHs.generateHandshake()
+		if err != nil {
+			b.Fatal("ServerHandshake failed", err)
+		}
+		if msg2 == nil {
+			b.Fatal("ServerHandshake is nil")
+		}
+		if len(msg2) < serverMinHandshakeLength {
+			b.Fatalf("ServerHandshake is too short: %d bytes, expected at least %d",
+				len(msg2), serverMinHandshakeLength)
+		}
+
+		// Client receives
+		_, keySeedClient, err := clientHs.parseServerHandshake(msg2)
+		if err != nil {
+			b.Fatal("ClientHandshake failed to parse", err)
+		}
+		if keySeedClient == nil {
+			b.Fatal("ClientHandshake derived nil KEY_SEED")
+		}
+		if len(keySeedClient) != ntor.KeySeedLength {
+			b.Fatalf("ClientHandshake KEY_SEED is wrong length: %d bytes, expected %d",
+				len(keySeedClient), ntor.KeySeedLength)
+		}
+
+		// Validate the authenticator.  Real code would pass the AUTH read off
+		// the network as a slice to CompareAuth here.
+		if !bytes.Equal(keySeedServer, keySeedClient) {
+			b.Fatal("KEY_SEED mismatched between client/server")
+		}
+	}
+}
