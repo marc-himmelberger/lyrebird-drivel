@@ -90,6 +90,16 @@ func getLengthDetails(okem okems.ObfuscatedKem, kem kems.KeyEncapsulationMechani
 	details.clientMaxPadLength = maxHandshakeLength - details.clientMinHandshakeLength
 	details.serverMaxPadLength = maxHandshakeLength - (details.serverMinHandshakeLength + inlineSeedFrameLength)
 
+	// log dynamically calculated size details for later analysis
+	log.Infof("client padding range [%d, %d]", details.clientMinPadLength, details.clientMaxPadLength)
+	log.Infof("bridge padding range [%d, %d]", details.serverMinPadLength, details.serverMaxPadLength)
+	log.Infof("size_kem_pk %d", details.epkLength)
+	log.Infof("size_kem_ctxt %d", details.ectLength)
+	log.Infof("size_okem_ctxt %d", details.csLength)
+	log.Infof("size_mark %d", markLength)
+	log.Infof("size_mac %d", macLength)
+	log.Infof("size_auth %d", details.authLength)
+
 	return details
 }
 
@@ -173,7 +183,6 @@ func newClientHandshake(
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity
 	hs.lengthDetails = getLengthDetails(okem, kem)
-	log.Infof("padding range [%d, %d]", hs.lengthDetails.clientMinPadLength, hs.lengthDetails.clientMaxPadLength)
 	hs.padLen = csrand.IntRange(hs.lengthDetails.clientMinPadLength, hs.lengthDetails.clientMaxPadLength) // XXX change distribution?
 
 	return hs
@@ -363,7 +372,6 @@ func newServerHandshake(
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity
 	hs.lengthDetails = getLengthDetails(okem, kem)
-	log.Infof("padding range [%d, %d]", hs.lengthDetails.serverMinPadLength, hs.lengthDetails.serverMaxPadLength)
 	hs.padLen = csrand.IntRange(hs.lengthDetails.serverMinPadLength, hs.lengthDetails.serverMaxPadLength)
 
 	return hs
