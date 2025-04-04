@@ -113,14 +113,14 @@ func testHandshake(t *testing.T) {
 	if markClient == nil {
 		t.Fatal("Failed to make client mark: output is nil")
 	}
-	if len(markClient) != KdfOutLength {
+	if len(markClient) != MarkLength {
 		t.Fatal("Failed to make client mark: wrong output length")
 	}
 	markServer := MessageMark(pseudorandomKey, false, msg)
 	if markServer == nil {
 		t.Fatal("Failed to make server mark: output is nil")
 	}
-	if len(markServer) != KdfOutLength {
+	if len(markServer) != MarkLength {
 		t.Fatal("Failed to make server mark: wrong output length")
 	}
 	if bytes.Equal(markClient, markServer) {
@@ -133,14 +133,14 @@ func testHandshake(t *testing.T) {
 	if macClient == nil {
 		t.Fatal("Failed to make client mac: output is nil")
 	}
-	if len(macClient) != KdfOutLength {
+	if len(macClient) != MacLength {
 		t.Fatal("Failed to make client mac: wrong output length")
 	}
 	macServer := MessageMAC(pseudorandomKey, false, msg, epoch)
 	if macServer == nil {
 		t.Fatal("Failed to make server mac: output is nil")
 	}
-	if len(macServer) != KdfOutLength {
+	if len(macServer) != MacLength {
 		t.Fatal("Failed to make server mac: wrong output length")
 	}
 	if bytes.Equal(macClient, macServer) {

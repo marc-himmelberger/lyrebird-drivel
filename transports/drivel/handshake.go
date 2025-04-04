@@ -30,7 +30,6 @@ package drivel
 import (
 	"bytes"
 	"crypto/hmac"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"time"
@@ -49,9 +48,6 @@ const (
 	maxHandshakeLength = 8192
 
 	inlineSeedFrameLength = framing.FrameOverhead + packetOverhead + seedPacketPayloadLength
-
-	markLength = sha256.Size
-	macLength  = sha256.Size
 )
 
 type lengthDetails struct {
@@ -78,8 +74,8 @@ func getLengthDetails(okem okems.ObfuscatedKem, kem kems.KeyEncapsulationMechani
 	details.csLength = okem.LengthCiphertext()
 	details.authLength = drivelcrypto.AuthLength
 
-	details.clientMinHandshakeLength = details.epkLength + details.csLength + markLength + macLength
-	details.serverMinHandshakeLength = details.ectLength + details.authLength + markLength + macLength
+	details.clientMinHandshakeLength = details.epkLength + details.csLength + drivelcrypto.MarkLength + drivelcrypto.MacLength
+	details.serverMinHandshakeLength = details.ectLength + details.authLength + drivelcrypto.MarkLength + drivelcrypto.MacLength
 
 	// Pad to send at least as much data as smallest server response with inlineSeedFrameLength added
 	details.clientMinPadLength = (details.serverMinHandshakeLength + inlineSeedFrameLength) - details.clientMinHandshakeLength
@@ -96,8 +92,8 @@ func getLengthDetails(okem okems.ObfuscatedKem, kem kems.KeyEncapsulationMechani
 	log.Infof("size_kem_pk %d", details.epkLength)
 	log.Infof("size_kem_ctxt %d", details.ectLength)
 	log.Infof("size_okem_ctxt %d", details.csLength)
-	log.Infof("size_mark %d", markLength)
-	log.Infof("size_mac %d", macLength)
+	log.Infof("size_mark %d", drivelcrypto.MarkLength)
+	log.Infof("size_mac %d", drivelcrypto.MacLength)
 	log.Infof("size_auth %d", details.authLength)
 
 	return details
@@ -298,8 +294,8 @@ func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error
 	}
 
 	// Validate the MAC.
-	macCmp := drivelcrypto.MessageMAC(hs.ephemeralSecret, false, resp[:pos+markLength], hs.epochHour)
-	macRx := resp[pos+markLength : pos+markLength+macLength]
+	macCmp := drivelcrypto.MessageMAC(hs.ephemeralSecret, false, resp[:pos+drivelcrypto.MarkLength], hs.epochHour)
+	macRx := resp[pos+drivelcrypto.MarkLength : pos+drivelcrypto.MarkLength+drivelcrypto.MacLength]
 	if !hmac.Equal(macCmp, macRx) {
 		return 0, nil, ErrInvalidMac
 	}
@@ -325,7 +321,7 @@ func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error
 		return 0, nil, ErrInvalidAuth
 	}
 
-	return pos + markLength + macLength, seed.Bytes()[:], nil
+	return pos + drivelcrypto.MarkLength + drivelcrypto.MacLength, seed.Bytes()[:], nil
 }
 
 // The serverHandshake struct saves all state needed for the
@@ -441,8 +437,8 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 	macFound := false
 	epochHour := getEpochHour()
 	for _, off := range []int64{0, -1, 1} {
-		macCmp := drivelcrypto.MessageMAC(hs.ephemeralSecret, true, resp[:pos+markLength], epochHour+off)
-		macRx := resp[pos+markLength : pos+markLength+macLength]
+		macCmp := drivelcrypto.MessageMAC(hs.ephemeralSecret, true, resp[:pos+drivelcrypto.MarkLength], epochHour+off)
+		macRx := resp[pos+drivelcrypto.MarkLength : pos+drivelcrypto.MarkLength+drivelcrypto.MacLength]
 		if hmac.Equal(macCmp, macRx) {
 			// Ensure that this handshake has not been seen previously.
 			if filter.TestAndSet(time.Now(), macRx) {
@@ -464,7 +460,7 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 	}
 
 	// Client should never sent trailing garbage.
-	if len(resp) != pos+markLength+macLength {
+	if len(resp) != pos+drivelcrypto.MarkLength+drivelcrypto.MacLength {
 		return nil, ErrInvalidHandshake
 	}
 
@@ -547,7 +543,7 @@ func getEpochHour() int64 {
 }
 
 func findMarkMac(mark, buf []byte, startPos, maxPos int, fromTail bool) (pos int) {
-	if len(mark) != markLength {
+	if len(mark) != drivelcrypto.MarkLength {
 		panic(fmt.Sprintf("BUG: Invalid mark length: %d", len(mark)))
 	}
 
@@ -558,7 +554,7 @@ func findMarkMac(mark, buf []byte, startPos, maxPos int, fromTail bool) (pos int
 	if endPos > maxPos {
 		endPos = maxPos
 	}
-	if endPos-startPos < markLength+macLength {
+	if endPos-startPos < drivelcrypto.MarkLength+drivelcrypto.MacLength {
 		return -1
 	}
 
@@ -566,8 +562,8 @@ func findMarkMac(mark, buf []byte, startPos, maxPos int, fromTail bool) (pos int
 		// The server can optimize the search process by only examining the
 		// tail of the buffer. The client can't send valid data past M_C |
 		// MAC_C as it does not have the server's public key yet.
-		pos = endPos - (markLength + macLength)
-		if !hmac.Equal(buf[pos:pos+markLength], mark) {
+		pos = endPos - (drivelcrypto.MarkLength + drivelcrypto.MacLength)
+		if !hmac.Equal(buf[pos:pos+drivelcrypto.MarkLength], mark) {
 			return -1
 		}
 
@@ -584,7 +580,7 @@ func findMarkMac(mark, buf []byte, startPos, maxPos int, fromTail bool) (pos int
 	}
 
 	// Ensure that there is enough trailing data for the MAC.
-	if startPos+pos+markLength+macLength > endPos {
+	if startPos+pos+drivelcrypto.MarkLength+drivelcrypto.MacLength > endPos {
 		return -1
 	}
 

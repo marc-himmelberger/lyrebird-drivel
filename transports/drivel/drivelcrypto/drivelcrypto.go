@@ -55,6 +55,12 @@ const (
 	// AuthLength is the lenghth of the derived AUTH.
 	AuthLength = KdfOutLength
 
+	// MarkLength is the lenghth of [MessageMark] outputs.
+	MarkLength = KdfOutLength / 2
+
+	// MacLength is the lenghth of [MessageMAC] outputs.
+	MacLength = KdfOutLength / 2
+
 	// KdfOutLength is the length of one round of KDF application.
 	// It should be used when a constant-size KDF output is desired.
 	KdfOutLength = sha256.Size
@@ -63,7 +69,6 @@ const (
 // Define string constants for info/context inputs to HKDF
 var protoID = []byte("Drivel")
 
-// XXX: Remove protoID from info values?
 var tMarkClient = append(protoID, []byte(":mc")...)
 var tMarkServer = append(protoID, []byte(":ms")...)
 var tMacClient = append(protoID, []byte(":mac_c")...)
@@ -165,10 +170,10 @@ func DrivelCommon(ephemeralSecret []byte, sharedKemSecret kems.SharedSecret,
 	context.Write(protoID)
 
 	// skey = F1(FS, context | ":key_extract")
-	keySeed = (*KeySeed)(KdfExpand(finalSecret, append(context.Bytes(), tSKey...), KdfOutLength))
+	keySeed = (*KeySeed)(KdfExpand(finalSecret, append(context.Bytes(), tSKey...), KeySeedLength))
 
 	// auth = F1(FS, context | ":server_mac")
-	auth = (*Auth)(KdfExpand(finalSecret, append(context.Bytes(), tKeyVerify...), KdfOutLength))
+	auth = (*Auth)(KdfExpand(finalSecret, append(context.Bytes(), tKeyVerify...), AuthLength))
 
 	return keySeed, auth
 }
@@ -185,7 +190,7 @@ func MessageMark(ephermalSecret []byte, isClient bool, msgMark []byte) (mark []b
 	_, _ = infoBuf.Write(msgMark)
 	_, _ = infoBuf.Write(tag)
 
-	return KdfExpand(ephermalSecret, infoBuf.Bytes(), KdfOutLength)
+	return KdfExpand(ephermalSecret, infoBuf.Bytes(), MarkLength)
 }
 
 // MessageMAC computes a MAC with HKDF-SHA256 over the entire `msg` (should include the mark)
@@ -206,7 +211,7 @@ func MessageMAC(ephermalSecret []byte, isClient bool, msg []byte, epochHour int6
 	_, _ = infoBuf.Write([]byte(epochHourStr))
 	_, _ = infoBuf.Write(tag)
 
-	return KdfExpand(ephermalSecret, infoBuf.Bytes(), KdfOutLength)
+	return KdfExpand(ephermalSecret, infoBuf.Bytes(), MacLength)
 }
 
 // KdfExpand expands pseudorandomKey via HKDF-SHA256 and returns `okm_len` bytes
