@@ -29,6 +29,7 @@ package drivel
 
 import (
 	"bytes"
+	"slices"
 	"testing"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
@@ -36,10 +37,103 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/drivelcrypto"
 )
 
-func TestHandshakeDrivelcryptoClient(t *testing.T) {
-	// XXX: Parameterize this
-	okem := okemScheme
-	kem := kemScheme
+// Tests utility function that other tests will rely on
+func TestGeneratePaddingTests(t *testing.T) {
+	for _, okemName := range cryptofactory.OkemNames() {
+		for _, kemName := range cryptofactory.KemNames() {
+			t.Run(kemName+"|"+okemName, func(t *testing.T) {
+				okem := cryptofactory.NewOkem(okemName)
+				kem := cryptofactory.NewKem(kemName)
+				lengthDetails := getLengthDetails(okem, kem)
+
+				values1 := generatePaddingTests(lengthDetails.clientMinPadLength, lengthDetails.clientMaxPadLength)
+				// must contain first 100 values
+				for l := lengthDetails.clientMinPadLength; l < min(lengthDetails.clientMinPadLength+100, lengthDetails.clientMaxPadLength); l++ {
+					if !slices.Contains(values1, l) {
+						t.Fatalf("padding value of %d not found", l)
+					}
+				}
+				// must contain last 100 values
+				for l := max(lengthDetails.clientMinPadLength, lengthDetails.clientMaxPadLength-100); l < lengthDetails.clientMinPadLength; l++ {
+					if !slices.Contains(values1, l) {
+						t.Fatalf("padding value of %d not found", l)
+					}
+				}
+				// all values must be in range
+				for _, l := range values1 {
+					if l < lengthDetails.clientMinPadLength || l > lengthDetails.clientMaxPadLength {
+						t.Fatalf("padding value of %d invalid", l)
+					}
+				}
+
+				values2 := generatePaddingTests(lengthDetails.serverMinPadLength, lengthDetails.serverMaxPadLength)
+				// must contain first 100 values
+				for l := lengthDetails.serverMinPadLength; l < min(lengthDetails.serverMinPadLength+100, lengthDetails.serverMaxPadLength); l++ {
+					if !slices.Contains(values2, l) {
+						t.Fatalf("padding value of %d not found", l)
+					}
+				}
+				// must contain last 100 values
+				for l := max(lengthDetails.serverMinPadLength, lengthDetails.serverMaxPadLength-100); l < lengthDetails.serverMinPadLength; l++ {
+					if !slices.Contains(values2, l) {
+						t.Fatalf("padding value of %d not found", l)
+					}
+				}
+				// all values must be in range
+				for _, l := range values2 {
+					if l < lengthDetails.serverMinPadLength || l > lengthDetails.serverMaxPadLength {
+						t.Fatalf("padding value of %d invalid", l)
+					}
+				}
+			})
+		}
+	}
+}
+
+// Creates a list of ints that should be tested as padding values.
+// There will be a region around padMin, padMax that is exhaustively tested.
+// Outside of the exhaustive region, the entire range is covered with <100 evenly spaced values.
+func generatePaddingTests(padMin, padMax int) []int {
+	values := make([]int, 0, 100+2*300)
+
+	bigSteps := (padMax - padMin) / 100
+	exhaustiveRegion := 100
+	padIncrement := 1
+
+	for l := padMin; l <= padMax; l += padIncrement {
+		if l-padMin > exhaustiveRegion {
+			if l+bigSteps < padMax-exhaustiveRegion {
+				padIncrement = bigSteps
+			} else if l < padMax-exhaustiveRegion {
+				padIncrement = padMax - exhaustiveRegion - l
+			} else {
+				padIncrement = 1
+			}
+		}
+		values = append(values, l)
+	}
+
+	return values
+}
+
+// Test that runs through all KEMs and OKEMs
+// and checks if client and server arrive at the same KEY_SEED
+// with all expected lengths of padding
+func TestHandshakeDrivelcrypto(t *testing.T) {
+	for _, okemName := range cryptofactory.OkemNames() {
+		for _, kemName := range cryptofactory.KemNames() {
+			t.Run(kemName+"|"+okemName, func(t *testing.T) {
+				testHandshakeDrivelcryptoClient(t, okemName, kemName)
+				testHandshakeDrivelcryptoServer(t, okemName, kemName)
+			})
+		}
+	}
+}
+
+func testHandshakeDrivelcryptoClient(t *testing.T, okemName string, kemName string) {
+	okem := cryptofactory.NewOkem(okemName)
+	kem := cryptofactory.NewKem(kemName)
+
 	lengthDetails := getLengthDetails(okem, kem)
 
 	// Generate the server node id and id keypair, and ephemeral session keys.
@@ -49,8 +143,12 @@ func TestHandshakeDrivelcryptoClient(t *testing.T) {
 	clientKeypair := kem.KeyGen()
 
 	// Test client handshake padding.
-	for l := lengthDetails.clientMinPadLength; l <= lengthDetails.clientMaxPadLength; l++ {
-		t.Logf("%d / %d up to %d", l, lengthDetails.clientMinPadLength, lengthDetails.clientMaxPadLength)
+	// Exhaustive padding check are too expensive
+	// TODO: remove this with fragmentation?
+	padMin := lengthDetails.clientMinPadLength
+	padMax := lengthDetails.clientMaxPadLength
+	for _, l := range generatePaddingTests(padMin, padMax) {
+		t.Logf("%d / %d up to %d", l, padMin, padMax)
 
 		// Generate the client state and override the pad length.
 		clientHs := newClientHandshake(okem, kem, nodeID, idKeypair.Public(), clientKeypair)
@@ -104,7 +202,7 @@ func TestHandshakeDrivelcryptoClient(t *testing.T) {
 
 	// Test oversized client padding.
 	clientHs := newClientHandshake(okem, kem, nodeID, idKeypair.Public(), clientKeypair)
-	clientHs.padLen = lengthDetails.clientMaxPadLength + 1
+	clientHs.padLen = padMax + 1
 	clientBlob, err := clientHs.generateHandshake()
 	if err != nil {
 		t.Fatalf("clientHandshake.generateHandshake() (forced oversize) failed: %s", err)
@@ -116,7 +214,7 @@ func TestHandshakeDrivelcryptoClient(t *testing.T) {
 	}
 
 	// Test undersized client padding.
-	clientHs.padLen = lengthDetails.clientMinPadLength - 1
+	clientHs.padLen = padMin - 1
 	clientBlob, err = clientHs.generateHandshake()
 	if err != nil {
 		t.Fatalf("clientHandshake.generateHandshake() (forced undersize) failed: %s", err)
@@ -128,10 +226,9 @@ func TestHandshakeDrivelcryptoClient(t *testing.T) {
 	}
 }
 
-func TestHandshakeDrivelcryptoServer(t *testing.T) {
-	// XXX: Parameterize this
-	okem := okemScheme
-	kem := kemScheme
+func testHandshakeDrivelcryptoServer(t *testing.T, okemName string, kemName string) {
+	okem := cryptofactory.NewOkem(okemName)
+	kem := cryptofactory.NewKem(kemName)
 	lengthDetails := getLengthDetails(okem, kem)
 
 	// Generate the server node id and id keypair, and ephemeral session keys.
@@ -141,8 +238,12 @@ func TestHandshakeDrivelcryptoServer(t *testing.T) {
 	clientKeypair := kem.KeyGen()
 
 	// Test server handshake padding.
-	for l := lengthDetails.serverMinPadLength; l <= lengthDetails.serverMaxPadLength+inlineSeedFrameLength; l++ {
-		t.Logf("%d / %d up to %d", l, lengthDetails.serverMinPadLength, lengthDetails.serverMaxPadLength+inlineSeedFrameLength)
+	// Exhaustive padding check are too expensive
+	// TODO: remove this with fragmentation?
+	padMin := lengthDetails.serverMinPadLength
+	padMax := lengthDetails.serverMaxPadLength + inlineSeedFrameLength
+	for _, l := range generatePaddingTests(padMin, padMax) {
+		t.Logf("%d / %d up to %d", l, padMin, padMax)
 
 		// Generate the client state and override the pad length.
 		clientHs := newClientHandshake(okem, kem, nodeID, idKeypair.Public(), clientKeypair)
@@ -226,7 +327,7 @@ func TestHandshakeDrivelcryptoServer(t *testing.T) {
 		t.Fatalf("clientHandshake.generateHandshake() failed: %s", err)
 	}
 	serverHs = newServerHandshake(okem, kem, nodeID, idKeypair)
-	serverHs.padLen = lengthDetails.serverMaxPadLength + inlineSeedFrameLength + 1
+	serverHs.padLen = padMax + 1
 	_, err = serverHs.parseClientHandshake(serverFilter, clientBlob)
 	if err != nil {
 		t.Fatalf("serverHandshake.parseClientHandshake() failed: %s", err)
@@ -299,13 +400,22 @@ func testSingleGetLengthDetails(t *testing.T, okemName string, kemName string) {
 	}
 }
 
-// Benchmark Client/Server handshake.  The actual time taken that will be
-// observed on either the Client or Server is half the reported time per
-// operation since the benchmark does both sides.
-func BenchmarkHandshake(b *testing.B) {
-	// XXX: Parameterize this
-	kem := kemScheme
-	okem := okemScheme
+// Benchmark Client/Server handshake for all KEMs/OKEMs.
+// The actual time taken that will be observed on either the Client or
+// Server is half the reported time per operation since the benchmark does both sides.
+func BenchmarkDrivelHandshake(b *testing.B) {
+	for _, okemName := range cryptofactory.OkemNames() {
+		for _, kemName := range cryptofactory.KemNames() {
+			b.Run(kemName+"|"+okemName, func(b *testing.B) {
+				benchmarkDrivelHandshake(b, okemName, kemName)
+			})
+		}
+	}
+}
+
+func benchmarkDrivelHandshake(b *testing.B, okemName string, kemName string) {
+	okem := cryptofactory.NewOkem(okemName)
+	kem := cryptofactory.NewKem(kemName)
 
 	// Generate the "long lasting" identity key and NodeId.
 	idKeypair := okem.KeyGen()
