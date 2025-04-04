@@ -33,9 +33,10 @@ package drivelcrypto // import "gitlab.torproject.org/tpo/anti-censorship/plugga
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -64,6 +65,9 @@ const (
 	// KdfOutLength is the length of one round of KDF application.
 	// It should be used when a constant-size KDF output is desired.
 	KdfOutLength = sha256.Size
+
+	// XorKeySize
+	XorKeySize = 32
 )
 
 // Define string constants for info/context inputs to HKDF
@@ -241,14 +245,29 @@ func PrfCombine(input1 []byte, input2 []byte) []byte {
 	return prf.Sum(nil)
 }
 
-// Expands the key to appropriate length using KdfExpand, then XORs with the message.
+// Performs AES-256-CTR encryption/decryption using a key of [XorKeySize] bytes.
 // This performs symmetric encryption/decryption and may hide structure within a message.
-// However, this function MUST NOT be called twice with the same key.
+// However, this function MUST NOT be called twice with the same key (even if messages differ).
 func XorEncryptDecrypt(key []byte, message []byte) []byte {
-	expanded := KdfExpand(key, tXorExpand, len(message))
-	n := subtle.XORBytes(expanded, expanded, message)
-	if n != len(message) {
-		panic(fmt.Sprintf("BUG: XOR encrypt/decrypt got truncated output: %d", n))
+	if XorKeySize != 32 {
+		panic(fmt.Sprintf("BUG: XorKeySize is not 32B but %dB.", XorKeySize))
 	}
-	return expanded
+	if len(key) != 32 {
+		panic(fmt.Sprintf("XorEncryptDecrypt: required 32B key, not %d", len(key)))
+	}
+
+	// 32B key selects AES-256 here
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		panic(fmt.Sprintf("BUG: Could not create AES cipher from %dB key.", len(key)))
+	}
+
+	// Because drivel never reuses K_S for two handshakes, we can use a static IV
+	iv := make([]byte, aes.BlockSize)
+	result := make([]byte, len(message))
+
+	stream := cipher.NewCTR(block, iv)
+	stream.XORKeyStream(result, message)
+
+	return result
 }

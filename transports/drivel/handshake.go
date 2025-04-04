@@ -222,8 +222,8 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 	hs.ephemeralSecret = drivelcrypto.PrfCombine(hs.nodeID.Bytes()[:], okemSharedSecret.Bytes())
 
 	// Derive encryption keys from ephemeral secret using KDF and different info values
-	hs.encryptionKey1 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc1, drivelcrypto.KdfOutLength)
-	hs.encryptionKey2 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc2, drivelcrypto.KdfOutLength)
+	hs.encryptionKey1 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc1, drivelcrypto.XorKeySize)
+	hs.encryptionKey2 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc2, drivelcrypto.XorKeySize)
 
 	// Encrypt own KEM public key
 	clientKemPublicKey := hs.keypair.Public()
@@ -419,8 +419,8 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 		hs.ephemeralSecret = drivelcrypto.PrfCombine(hs.nodeID.Bytes()[:], shared.Bytes())
 
 		// Derive encryption keys from ephemeral secret using KDF and different info values
-		hs.encryptionKey1 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc1, drivelcrypto.KdfOutLength)
-		hs.encryptionKey2 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc2, drivelcrypto.KdfOutLength)
+		hs.encryptionKey1 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc1, drivelcrypto.XorKeySize)
+		hs.encryptionKey2 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc2, drivelcrypto.XorKeySize)
 
 		// Derive the mark.
 		hs.clientMark = drivelcrypto.MessageMark(hs.ephemeralSecret, true, resp[0:epkLength+csLength])
