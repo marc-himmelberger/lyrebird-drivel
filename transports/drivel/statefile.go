@@ -50,6 +50,8 @@ const (
 )
 
 type jsonServerState struct {
+	KemName    string `json:"kem"`
+	OkemName   string `json:"okem"`
 	NodeID     string `json:"node-id"`
 	PrivateKey string `json:"private-key"`
 	PublicKey  string `json:"public-key"`
@@ -123,6 +125,10 @@ func serverStateFromArgs(stateDir string, args *pt.Args, okem okems.ObfuscatedKe
 	var js jsonServerState
 	var nodeIDOk, privKeyOk, seedOk bool
 
+	// HACK: Should be loaded from args, but that would still require hardcoding them for the client
+	// our only goal is to check that the file content is consistent
+	js.KemName = kemScheme.Name()
+	js.OkemName = okemScheme.Name()
 	js.NodeID, nodeIDOk = args.Get(nodeIDArg)
 	js.PrivateKey, privKeyOk = args.Get(privateKeyArg)
 	js.DrbgSeed, seedOk = args.Get(seedArg)
@@ -160,6 +166,12 @@ func serverStateFromJSONServerState(stateDir string, js *jsonServerState, okem o
 	var err error
 
 	st := new(drivelServerState)
+	if js.KemName != kemScheme.Name() {
+		return nil, fmt.Errorf("invalid kemName '%s', should be '%s'", js.KemName, kemScheme.Name())
+	}
+	if js.OkemName != okemScheme.Name() {
+		return nil, fmt.Errorf("invalid okemName '%s', should be '%s'", js.OkemName, okemScheme.Name())
+	}
 	if st.nodeID, err = drivelcrypto.NodeIDFromHex(js.NodeID); err != nil {
 		return nil, err
 	}
