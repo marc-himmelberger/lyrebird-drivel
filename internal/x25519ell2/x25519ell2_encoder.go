@@ -44,8 +44,8 @@ func (encoder *Elligator2Encoder) LengthObfuscatedCiphertext() int {
 
 // Utility function, added for fixed-tweak test cases. Used in EncodeCiphertext.
 func (encoder *Elligator2Encoder) encodeCiphertextWithTweak(obfCiphertext []byte, kemCiphertext []byte, tweak byte) (ok bool) {
-	// Convert kemCiphertext back to field element u
-	// XXX: this requires u to be (for all intents and purposes) invariant under u.SetBytes(u.Bytes())
+	// Convert kemCiphertext back to field element u.
+	// This requires u to be invariant under u.SetBytes(u.Bytes()) which is tested as [testIdempotentBytes]
 	pkArr := (*[PublicKeyLength]byte)(kemCiphertext)
 
 	var u field.Element

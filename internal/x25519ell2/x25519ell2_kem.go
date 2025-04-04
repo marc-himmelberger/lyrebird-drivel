@@ -52,7 +52,7 @@ const (
 // and subsequently uses ExtractAndExpand(x.B, context) as its secret.
 //
 // This code uses x.B as a secret directly.
-// XXX: I think this is fine, because we only use shared secrets in inputs to HMAC/HKDF, but it might be nice...
+// This is fine, because we only use shared secrets in inputs to HMAC/HKDF.
 //
 // [RFC 9180]: https://www.rfc-editor.org/rfc/rfc9180.html
 type X25519KEM struct{}
@@ -90,9 +90,6 @@ func (kem *X25519KEM) KeyGen() *kems.Keypair {
 	}
 	digest := sha512.Sum512(privateBuf[:])
 	copy(privateBuf[:], digest[:])
-	// XXX: Optionally make public key one byte larger, and add digest[63].
-	// This would allow the encoder to yield deterministic representatitves. Do we want that?
-	// Alternative: new csrand call during Encode
 
 	// Apply the Elligator transform.  This fails ~50% of the time.
 	// Inlined from ScalarBaseMult.

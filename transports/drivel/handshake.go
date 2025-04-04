@@ -179,7 +179,7 @@ func newClientHandshake(
 	hs.nodeID = nodeID
 	hs.serverIdentity = serverIdentity
 	hs.lengthDetails = getLengthDetails(okem, kem)
-	hs.padLen = csrand.IntRange(hs.lengthDetails.clientMinPadLength, hs.lengthDetails.clientMaxPadLength) // XXX change distribution?
+	hs.padLen = csrand.IntRange(hs.lengthDetails.clientMinPadLength, hs.lengthDetails.clientMaxPadLength)
 
 	return hs
 }
@@ -195,7 +195,6 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 	//  * epk_e is the encrypted client KEM public key.
 	//  * c_S is the (obfuscated) OKEM ciphertext.
 	//  * P_C is [clientMinPadLength,clientMaxPadLength] bytes of random padding.
-	// XXX change?
 	//  * M_C is a "mark" computed as HKDF-SHA256(ES, epk_e | c_S| ":mc")
 	//  * MAC_C is HKDF-SHA256(ES, epk_e | ... | E | ":mac_c")
 	//  * E is the string representation of the number of hours since the UNIX epoch.
@@ -502,7 +501,6 @@ func (hs *serverHandshake) generateHandshake() ([]byte, error) {
 	//  * ect_e is the encrypted KEM ciphertext.
 	//  * AUTH is the drivelcrypto handshake AUTH value.
 	//  * P_S is [serverMinPadLength,serverMaxPadLength] bytes of random padding.
-	// XXX: Change?
 	//  * M_S is a "mark" computed as HKDF-SHA256(ES, ect_e | ":ms")
 	//  * MAC_S is HKDF-SHA256(ES, ect_e | ... | E | ":mac_s")
 	//  * E is the string representation of the number of hours since the UNIX epoch.
@@ -572,8 +570,6 @@ func findMarkMac(mark, buf []byte, startPos, maxPos int, fromTail bool) (pos int
 
 	// The client has to actually do a substring search since the server can
 	// and will send payload trailing the response.
-	//
-	// XXX: bytes.Index() uses a naive search, which kind of sucks.
 	pos = bytes.Index(buf[startPos:endPos], mark)
 	if pos == -1 {
 		return -1
