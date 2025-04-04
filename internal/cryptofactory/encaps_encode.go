@@ -46,6 +46,9 @@ type EncapsThenEncode interface {
 	DecodeCiphertext(kemCiphertext []byte, obfCiphertext []byte)
 }
 
+// Constructs an OKEM based on a KEM and encoder.
+// The encoder may be 'nil' in which case the KEM is used directly.
+// The encoder must already be initialized with the kem.
 type EncapsThenEncodeOKEM struct {
 	kem     kems.KeyEncapsulationMechanism
 	encoder EncapsThenEncode
@@ -69,6 +72,9 @@ func (ete *EncapsThenEncodeOKEM) LengthPrivateKey() int {
 // LengthCiphertext of encaps-then-encapsulate construction replaces the length
 // of KEM ciphertexts by the length of the encoder's output
 func (ete *EncapsThenEncodeOKEM) LengthCiphertext() int {
+	if ete.encoder == nil {
+		return ete.kem.LengthCiphertext()
+	}
 	return ete.encoder.LengthObfuscatedCiphertext()
 }
 
@@ -99,36 +105,49 @@ func (ete *EncapsThenEncodeOKEM) Encaps(public okems.PublicKey) (okems.Obfuscate
 			return okems.ObfuscatedCiphertext(cryptodata.Nil), okems.SharedSecret(cryptodata.Nil), err
 		}
 
-		obfCtxt := make([]byte, ete.encoder.LengthObfuscatedCiphertext())
+		okemSharedSecret := okems.SharedSecret(sharedSecret)
+		var obfCiphertext cryptodata.CryptoData
 
-		ok := ete.encoder.EncodeCiphertext(obfCtxt, kemCiphertext.Bytes())
-		if !ok {
-			log.Debugf("cryptofactory - retrying encode for ciphertext")
-			continue
+		if ete.encoder == nil {
+			obfCiphertext = (cryptodata.CryptoData)(kemCiphertext)
+		} else {
+			obfCtxt := make([]byte, ete.LengthCiphertext())
+
+			ok := ete.encoder.EncodeCiphertext(obfCtxt, kemCiphertext.Bytes())
+			if !ok {
+				log.Debugf("cryptofactory - retrying encode for ciphertext")
+				continue
+			}
+
+			obfCiphertext, err = cryptodata.New(obfCtxt, ete.LengthCiphertext())
+			if err != nil {
+				return okems.ObfuscatedCiphertext(cryptodata.Nil), okems.SharedSecret(cryptodata.Nil), err
+			}
 		}
 
-		obfCiphertext, err := cryptodata.New(obfCtxt, ete.encoder.LengthObfuscatedCiphertext())
-		if err != nil {
-			return okems.ObfuscatedCiphertext(cryptodata.Nil), okems.SharedSecret(cryptodata.Nil), err
-		}
-
-		return okems.ObfuscatedCiphertext(obfCiphertext), okems.SharedSecret(sharedSecret), nil
+		return okems.ObfuscatedCiphertext(obfCiphertext), okemSharedSecret, nil
 	}
 }
 
 // Decaps of encaps-then-encapsulate construction uses the encoder to decode the ciphertext,
 // and performs KEM decapsulation on the result
 func (ete *EncapsThenEncodeOKEM) Decaps(private okems.PrivateKey, obfCiphertext okems.ObfuscatedCiphertext) (okems.SharedSecret, error) {
-	obfCiphertext.AssertSize(ete.encoder.LengthObfuscatedCiphertext())
+	obfCiphertext.AssertSize(ete.LengthCiphertext())
 	private.AssertSize(ete.kem.LengthPrivateKey())
 	kemPrivateKey := (kems.PrivateKey)(private)
 
-	ctxt := make([]byte, ete.kem.LengthCiphertext())
-	ete.encoder.DecodeCiphertext(ctxt, obfCiphertext.Bytes())
+	var kemCiphertext cryptodata.CryptoData
+	if ete.encoder == nil {
+		kemCiphertext = (cryptodata.CryptoData)(obfCiphertext)
+	} else {
+		ctxt := make([]byte, ete.kem.LengthCiphertext())
+		ete.encoder.DecodeCiphertext(ctxt, obfCiphertext.Bytes())
 
-	kemCiphertext, err := cryptodata.New(ctxt, ete.kem.LengthCiphertext())
-	if err != nil {
-		return okems.SharedSecret(cryptodata.Nil), err
+		var err error
+		kemCiphertext, err = cryptodata.New(ctxt, ete.kem.LengthCiphertext())
+		if err != nil {
+			return okems.SharedSecret(cryptodata.Nil), err
+		}
 	}
 
 	sharedSecret, err := ete.kem.Decaps(kemPrivateKey, kems.Ciphertext(kemCiphertext))

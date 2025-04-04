@@ -62,9 +62,15 @@ func OkemNames() []string {
 
 const etePrefix = "EtE-"
 
-// All KEMs for which encoders are available. This list must not be modified.
+// All KEMs for which encoders are available. This list must not be modified at runtime.
+// New entries must be reflected in NewOkem.
 var allEncodedKems = []string{
 	"x25519",
+	"Classic-McEliece-348864",
+	"Classic-McEliece-460896",
+	"Classic-McEliece-6688128",
+	"Classic-McEliece-6960119",
+	"Classic-McEliece-8192128",
 }
 
 /*
@@ -108,12 +114,22 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 		switch kemName {
 		case "x25519":
 			encoder = &x25519ell2.Elligator2Encoder{}
+		case "Classic-McEliece-348864",
+			"Classic-McEliece-460896",
+			"Classic-McEliece-6688128",
+			"Classic-McEliece-8192128":
+			encoder = nil
+		case "Classic-McEliece-6960119":
+			encoder = &ClassicMcEliecePadder{}
 		//case "KEM1", "KEM2":
 		//	encoder = Kem1Encoder{}
 		default:
 			panic("cryptofactory: contradictory 'allEncodedKems' and switch-case " + kemName)
 		}
-		// Combine
+		// Initialize and Combine
+		if encoder != nil {
+			encoder.Init(kem)
+		}
 		return &EncapsThenEncodeOKEM{kem, encoder}
 	} else if strings.HasPrefix(okemName, "OEINC[") && strings.HasSuffix(okemName, "]") {
 		panic("cryptofactory: OEINC not yet implemented")
