@@ -32,10 +32,12 @@ import (
 	"testing"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/drivelcrypto"
 )
 
 func TestHandshakeDrivelcryptoClient(t *testing.T) {
+	// XXX: Parameterize this
 	okem := okemScheme
 	kem := kemScheme
 	lengthDetails := getLengthDetails(okem, kem)
@@ -48,8 +50,7 @@ func TestHandshakeDrivelcryptoClient(t *testing.T) {
 
 	// Test client handshake padding.
 	for l := lengthDetails.clientMinPadLength; l <= lengthDetails.clientMaxPadLength; l++ {
-		t.Logf("%d / %d", l-lengthDetails.clientMinPadLength,
-			lengthDetails.clientMaxPadLength-lengthDetails.clientMinPadLength)
+		t.Logf("%d / %d up to %d", l, lengthDetails.clientMinPadLength, lengthDetails.clientMaxPadLength)
 
 		// Generate the client state and override the pad length.
 		clientHs := newClientHandshake(okem, kem, nodeID, idKeypair.Public(), clientKeypair)
@@ -128,6 +129,7 @@ func TestHandshakeDrivelcryptoClient(t *testing.T) {
 }
 
 func TestHandshakeDrivelcryptoServer(t *testing.T) {
+	// XXX: Parameterize this
 	okem := okemScheme
 	kem := kemScheme
 	lengthDetails := getLengthDetails(okem, kem)
@@ -140,8 +142,7 @@ func TestHandshakeDrivelcryptoServer(t *testing.T) {
 
 	// Test server handshake padding.
 	for l := lengthDetails.serverMinPadLength; l <= lengthDetails.serverMaxPadLength+inlineSeedFrameLength; l++ {
-		t.Logf("%d / %d", l-lengthDetails.serverMinPadLength,
-			lengthDetails.serverMaxPadLength+inlineSeedFrameLength-lengthDetails.serverMinPadLength)
+		t.Logf("%d / %d up to %d", l, lengthDetails.serverMinPadLength, lengthDetails.serverMaxPadLength+inlineSeedFrameLength)
 
 		// Generate the client state and override the pad length.
 		clientHs := newClientHandshake(okem, kem, nodeID, idKeypair.Public(), clientKeypair)
@@ -240,10 +241,69 @@ func TestHandshakeDrivelcryptoServer(t *testing.T) {
 	}
 }
 
+// Test that all lengths are positive and have the correct relationship between them
+func TestGetLengthDetails(t *testing.T) {
+	for _, okemName := range cryptofactory.OkemNames() {
+		for _, kemName := range cryptofactory.KemNames() {
+			t.Run(kemName+"|"+okemName, func(t *testing.T) {
+				testSingleGetLengthDetails(t, okemName, kemName)
+			})
+		}
+	}
+}
+
+func testSingleGetLengthDetails(t *testing.T, okemName string, kemName string) {
+	okem := cryptofactory.NewOkem(okemName)
+	kem := cryptofactory.NewKem(kemName)
+
+	details := getLengthDetails(okem, kem)
+
+	// Check that all fields are strictly positive
+	if details.epkLength <= 0 {
+		t.Fatalf("epkLength = %v <= 0", details.epkLength)
+	}
+	if details.ectLength <= 0 {
+		t.Fatalf("ectLength = %v <= 0", details.ectLength)
+	}
+	if details.csLength <= 0 {
+		t.Fatalf("csLength = %v <= 0", details.csLength)
+	}
+	if details.authLength <= 0 {
+		t.Fatalf("authLength = %v <= 0", details.authLength)
+	}
+	if details.clientMinHandshakeLength <= 0 {
+		t.Fatalf("clientMinHandshakeLength = %v <= 0", details.clientMinHandshakeLength)
+	}
+	if details.serverMinHandshakeLength <= 0 {
+		t.Fatalf("serverMinHandshakeLength = %v <= 0", details.serverMinHandshakeLength)
+	}
+	if details.clientMinPadLength < 0 {
+		t.Fatalf("clientMinPadLength = %v <= 0", details.clientMinPadLength)
+	}
+	if details.clientMaxPadLength < 0 {
+		t.Fatalf("clientMaxPadLength = %v <= 0", details.clientMaxPadLength)
+	}
+	if details.serverMinPadLength < 0 {
+		t.Fatalf("serverMinPadLength = %v <= 0", details.serverMinPadLength)
+	}
+	if details.serverMaxPadLength < 0 {
+		t.Fatalf("serverMaxPadLength = %v <= 0", details.serverMaxPadLength)
+	}
+
+	// Check that min, max of padding makes sense
+	if details.clientMinPadLength > details.clientMaxPadLength {
+		t.Fatalf("client___PadLength Min/Max not valid: %v > %v", details.clientMinPadLength, details.clientMaxPadLength)
+	}
+	if details.serverMinPadLength > details.serverMaxPadLength {
+		t.Fatalf("server___PadLength Min/Max not valid: %v > %v", details.serverMinPadLength, details.serverMaxPadLength)
+	}
+}
+
 // Benchmark Client/Server handshake.  The actual time taken that will be
 // observed on either the Client or Server is half the reported time per
 // operation since the benchmark does both sides.
 func BenchmarkHandshake(b *testing.B) {
+	// XXX: Parameterize this
 	kem := kemScheme
 	okem := okemScheme
 

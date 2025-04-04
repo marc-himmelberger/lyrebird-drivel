@@ -45,7 +45,11 @@ import (
 )
 
 const (
-	maxHandshakeLength = 8192
+	// Currently set to 334 pages of 4KB each:
+	// able to contain the size of the largest Classic McEliece public key
+	// plus the original 8192 bytes
+	// TODO: Change back to 8192 after there is fragmentation
+	maxHandshakeLength = 1368064
 
 	inlineSeedFrameLength = framing.FrameOverhead + packetOverhead + seedPacketPayloadLength
 )
@@ -78,7 +82,7 @@ func getLengthDetails(okem okems.ObfuscatedKem, kem kems.KeyEncapsulationMechani
 	details.serverMinHandshakeLength = details.ectLength + details.authLength + drivelcrypto.MarkLength + drivelcrypto.MacLength
 
 	// Pad to send at least as much data as smallest server response with inlineSeedFrameLength added
-	details.clientMinPadLength = (details.serverMinHandshakeLength + inlineSeedFrameLength) - details.clientMinHandshakeLength
+	details.clientMinPadLength = max(0, (details.serverMinHandshakeLength+inlineSeedFrameLength)-details.clientMinHandshakeLength)
 	// No minimum amound of padding in server response
 	details.serverMinPadLength = 0
 
