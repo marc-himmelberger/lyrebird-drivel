@@ -45,9 +45,10 @@ import (
 )
 
 const (
-	// Currently set to 334 pages of 4KB each:
-	// able to contain the size of the largest Classic McEliece public key
-	// plus the original 8192 bytes
+	// Currently set to 334 pages of 4KB (for good alignment) each:
+	// with 332 pages, TestGetLengthDetails verifies that all data can fit
+	// we then also add the original 8192 bytes for padding
+	// => buffer is 1.305 MiB
 	// TODO: Change back to 8192 after there is fragmentation
 	maxHandshakeLength = 1368064
 
@@ -563,7 +564,7 @@ func findMarkMac(mark, buf []byte, startPos, maxPos int, fromTail bool) (pos int
 	if fromTail {
 		// The server can optimize the search process by only examining the
 		// tail of the buffer. The client can't send valid data past M_C |
-		// MAC_C as it does not have the server's public key yet.
+		// MAC_C as it does not have the server's ephemeral shared secret yet.
 		pos = endPos - (drivelcrypto.MarkLength + drivelcrypto.MacLength)
 		if !hmac.Equal(buf[pos:pos+drivelcrypto.MarkLength], mark) {
 			return -1
