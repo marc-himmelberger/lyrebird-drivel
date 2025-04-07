@@ -70,6 +70,13 @@ func (data CryptoData) Hex() string {
 	return hex.EncodeToString(data.Bytes())
 }
 
+// Copy returns a newly allocated byte slice containing the data.
+func (data CryptoData) Copy() []byte {
+	copySlice := make([]byte, len(data.Bytes()))
+	copy(copySlice, data.Bytes())
+	return copySlice
+}
+
 // New creates a CryptoData from the raw bytes.
 func New(raw []byte, expectedSize int) (CryptoData, error) {
 	var data CryptoData

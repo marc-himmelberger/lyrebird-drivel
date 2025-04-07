@@ -29,11 +29,15 @@ package drivel
 
 import (
 	"bytes"
+	"flag"
+	"os"
 	"slices"
 	"testing"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/drivelcrypto"
 )
 
@@ -95,6 +99,22 @@ func testSingleGetLengthDetails(t *testing.T, okemName string, kemName string) {
 	}
 }
 
+// Number of padding sizes to test in simulated handshakes.
+// This number of tests are performed around min, around max,
+// and to cover the range in between, i.e. 3*numPaddings padding sizes are checked
+var numPaddings int
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if testing.Short() {
+		numPaddings = 2
+	} else {
+		numPaddings = 50
+	}
+	code := m.Run()
+	os.Exit(code)
+}
+
 // Tests utility function that other tests will rely on
 func TestGeneratePaddingTests(t *testing.T) {
 	for _, okemName := range cryptofactory.OkemNames() {
@@ -105,14 +125,14 @@ func TestGeneratePaddingTests(t *testing.T) {
 				lengthDetails := getLengthDetails(okem, kem)
 
 				values1 := generatePaddingTests(lengthDetails.clientMinPadLength, lengthDetails.clientMaxPadLength)
-				// must contain first 100 values
-				for l := lengthDetails.clientMinPadLength; l < min(lengthDetails.clientMinPadLength+100, lengthDetails.clientMaxPadLength); l++ {
+				// must contain first numPaddings values
+				for l := lengthDetails.clientMinPadLength; l < min(lengthDetails.clientMinPadLength+numPaddings, lengthDetails.clientMaxPadLength); l++ {
 					if !slices.Contains(values1, l) {
 						t.Fatalf("padding value of %d not found", l)
 					}
 				}
-				// must contain last 100 values
-				for l := max(lengthDetails.clientMinPadLength, lengthDetails.clientMaxPadLength-100); l < lengthDetails.clientMinPadLength; l++ {
+				// must contain last numPaddings values
+				for l := max(lengthDetails.clientMinPadLength, lengthDetails.clientMaxPadLength-numPaddings); l < lengthDetails.clientMinPadLength; l++ {
 					if !slices.Contains(values1, l) {
 						t.Fatalf("padding value of %d not found", l)
 					}
@@ -123,16 +143,20 @@ func TestGeneratePaddingTests(t *testing.T) {
 						t.Fatalf("padding value of %d invalid", l)
 					}
 				}
+				// must contain almost 3*numPaddings values (rounding might remove 1 middle value)
+				if len(values1) < 3*numPaddings-1 {
+					t.Fatalf("only %d padding values, should be closer to %d", len(values1), 3*numPaddings)
+				}
 
 				values2 := generatePaddingTests(lengthDetails.serverMinPadLength, lengthDetails.serverMaxPadLength)
-				// must contain first 100 values
-				for l := lengthDetails.serverMinPadLength; l < min(lengthDetails.serverMinPadLength+100, lengthDetails.serverMaxPadLength); l++ {
+				// must contain first numPaddings values
+				for l := lengthDetails.serverMinPadLength; l < min(lengthDetails.serverMinPadLength+numPaddings, lengthDetails.serverMaxPadLength); l++ {
 					if !slices.Contains(values2, l) {
 						t.Fatalf("padding value of %d not found", l)
 					}
 				}
-				// must contain last 100 values
-				for l := max(lengthDetails.serverMinPadLength, lengthDetails.serverMaxPadLength-100); l < lengthDetails.serverMinPadLength; l++ {
+				// must contain last numPaddings values
+				for l := max(lengthDetails.serverMinPadLength, lengthDetails.serverMaxPadLength-numPaddings); l < lengthDetails.serverMinPadLength; l++ {
 					if !slices.Contains(values2, l) {
 						t.Fatalf("padding value of %d not found", l)
 					}
@@ -143,6 +167,10 @@ func TestGeneratePaddingTests(t *testing.T) {
 						t.Fatalf("padding value of %d invalid", l)
 					}
 				}
+				// must contain almost 3*numPaddings values (rounding might remove 1 middle value)
+				if len(values2) < 3*numPaddings-1 {
+					t.Fatalf("only %d padding values, should be closer to %d", len(values2), 3*numPaddings)
+				}
 			})
 		}
 	}
@@ -150,12 +178,12 @@ func TestGeneratePaddingTests(t *testing.T) {
 
 // Creates a list of ints that should be tested as padding values.
 // There will be a region around padMin, padMax that is exhaustively tested.
-// Outside of the exhaustive region, the entire range is covered with <100 evenly spaced values.
+// Outside of the exhaustive region, the entire range is covered with evenly spaced values.
 func generatePaddingTests(padMin, padMax int) []int {
-	values := make([]int, 0, 100+2*300)
+	values := make([]int, 0, 3*numPaddings)
 
-	bigSteps := (padMax - padMin) / 100
-	exhaustiveRegion := 100
+	bigSteps := (padMax - padMin) / numPaddings
+	exhaustiveRegion := numPaddings
 	padIncrement := 1
 
 	for l := padMin; l <= padMax; l += padIncrement {
@@ -200,11 +228,21 @@ func testHandshakeDrivelcryptoClient(t *testing.T, okemName string, kemName stri
 	serverFilter, _ := replayfilter.New(replayTTL)
 	clientKeypair := kem.KeyGen()
 
+	originalIdKeypair := okems.KeypairFromBytes(
+		idKeypair.Private().Copy(), idKeypair.Public().Copy(),
+		okem.LengthPrivateKey(), okem.LengthPublicKey(),
+	)
+	originalClientKeypair := kems.KeypairFromBytes(
+		clientKeypair.Private().Copy(), clientKeypair.Public().Copy(),
+		kem.LengthPrivateKey(), kem.LengthPublicKey(),
+	)
+
 	// Test client handshake padding.
 	// Exhaustive padding check are too expensive
 	// TODO: remove this with fragmentation?
 	padMin := lengthDetails.clientMinPadLength
 	padMax := lengthDetails.clientMaxPadLength
+	t.Logf("Covering padding lengths from %d up to %d", padMin, padMax)
 	for _, l := range generatePaddingTests(padMin, padMax) {
 		t.Logf("%d / %d up to %d", l, padMin, padMax)
 
@@ -256,6 +294,20 @@ func testHandshakeDrivelcryptoClient(t *testing.T, okemName string, kemName stri
 		if !bytes.Equal(clientSeed, serverSeed) {
 			t.Fatalf("[%d:0] client/server seed mismatch", l)
 		}
+
+		// Ensure no KEM / OKEM implementation accidentally changed the keypairs.
+		if !bytes.Equal(clientKeypair.Private().Bytes(), originalClientKeypair.Private().Bytes()) {
+			t.Fatalf("[%d:0] clientKeypair.Private() was altered", l)
+		}
+		if !bytes.Equal(clientKeypair.Public().Bytes(), originalClientKeypair.Public().Bytes()) {
+			t.Fatalf("[%d:0] clientKeypair.Public() was altered", l)
+		}
+		if !bytes.Equal(idKeypair.Private().Bytes(), originalIdKeypair.Private().Bytes()) {
+			t.Fatalf("[%d:0] idKeypair.Private() was altered", l)
+		}
+		if !bytes.Equal(idKeypair.Public().Bytes(), originalIdKeypair.Public().Bytes()) {
+			t.Fatalf("[%d:0] idKeypair.Public() was altered", l)
+		}
 	}
 
 	// Test oversized client padding.
@@ -271,16 +323,18 @@ func testHandshakeDrivelcryptoClient(t *testing.T, okemName string, kemName stri
 		t.Fatalf("serverHandshake.parseClientHandshake() succeded (oversized)")
 	}
 
-	// Test undersized client padding.
-	clientHs.padLen = padMin - 1
-	clientBlob, err = clientHs.generateHandshake()
-	if err != nil {
-		t.Fatalf("clientHandshake.generateHandshake() (forced undersize) failed: %s", err)
-	}
-	serverHs = newServerHandshake(okem, kem, nodeID, idKeypair)
-	_, err = serverHs.parseClientHandshake(serverFilter, clientBlob)
-	if err == nil {
-		t.Fatalf("serverHandshake.parseClientHandshake() succeded (undersized)")
+	// Test undersized client padding (only if possible)
+	if padMin > 0 {
+		clientHs.padLen = padMin - 1
+		clientBlob, err = clientHs.generateHandshake()
+		if err != nil {
+			t.Fatalf("clientHandshake.generateHandshake() (forced undersize) failed: %s", err)
+		}
+		serverHs = newServerHandshake(okem, kem, nodeID, idKeypair)
+		_, err = serverHs.parseClientHandshake(serverFilter, clientBlob)
+		if err == nil {
+			t.Fatalf("serverHandshake.parseClientHandshake() succeded (undersized)")
+		}
 	}
 }
 
@@ -300,6 +354,7 @@ func testHandshakeDrivelcryptoServer(t *testing.T, okemName string, kemName stri
 	// TODO: remove this with fragmentation?
 	padMin := lengthDetails.serverMinPadLength
 	padMax := lengthDetails.serverMaxPadLength + inlineSeedFrameLength
+	t.Logf("Covering padding lengths from %d up to %d", padMin, padMax)
 	for _, l := range generatePaddingTests(padMin, padMax) {
 		t.Logf("%d / %d up to %d", l, padMin, padMax)
 
@@ -360,16 +415,18 @@ func testHandshakeDrivelcryptoServer(t *testing.T, okemName string, kemName stri
 		t.Fatalf("serverHandshake.parseClientHandshake() succeded (oversized)")
 	}
 
-	// Test undersized client padding.
-	clientHs.padLen = lengthDetails.clientMinPadLength - 1
-	clientBlob, err = clientHs.generateHandshake()
-	if err != nil {
-		t.Fatalf("clientHandshake.generateHandshake() (forced undersize) failed: %s", err)
-	}
-	serverHs = newServerHandshake(okem, kem, nodeID, idKeypair)
-	_, err = serverHs.parseClientHandshake(serverFilter, clientBlob)
-	if err == nil {
-		t.Fatalf("serverHandshake.parseClientHandshake() succeded (undersized)")
+	// Test undersized client padding (only if possible)
+	if lengthDetails.clientMinPadLength > 0 {
+		clientHs.padLen = lengthDetails.clientMinPadLength - 1
+		clientBlob, err = clientHs.generateHandshake()
+		if err != nil {
+			t.Fatalf("clientHandshake.generateHandshake() (forced undersize) failed: %s", err)
+		}
+		serverHs = newServerHandshake(okem, kem, nodeID, idKeypair)
+		_, err = serverHs.parseClientHandshake(serverFilter, clientBlob)
+		if err == nil {
+			t.Fatalf("serverHandshake.parseClientHandshake() succeded (undersized)")
+		}
 	}
 
 	// Test oversized server padding.

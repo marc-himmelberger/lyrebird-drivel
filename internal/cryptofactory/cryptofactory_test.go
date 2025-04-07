@@ -29,12 +29,24 @@ package cryptofactory
 
 import (
 	"bytes"
+	"flag"
+	"os"
 	"testing"
 )
 
-// Number of times to repeat correctness tests.
-// Testing all OQS KEMs takes forever - but we could restrict those
-const numRepeats = 2
+// Number of times to repeat correctness tests for enabled KEMs.
+var numRepeats int
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if testing.Short() {
+		numRepeats = 2
+	} else {
+		numRepeats = 50
+	}
+	code := m.Run()
+	os.Exit(code)
+}
 
 // TestKemCorrectness tests correctness for all KEMs.
 func TestKemCorrectness(t *testing.T) {

@@ -29,6 +29,8 @@ package drivelcrypto
 
 import (
 	"bytes"
+	"flag"
+	"os"
 	"testing"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
@@ -37,21 +39,33 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 )
 
-const (
-	maxOkmLen = 256
-)
+// Maximum number of bytes that will ever be requested from KdfExpand in implementations
+// TODO move to drivelcrypto as constant, possibly use for XorEncryptDecrypt
+const maxOkmLen = 255 * 32
 
 // Number of times to repeat handshake tests.
-const numRepeats = 100
+var numRepeats int
 
-// Test Client/Server handshake.
-func TestHandshake(t *testing.T) {
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if testing.Short() {
+		numRepeats = 10
+	} else {
+		numRepeats = 100
+	}
+	code := m.Run()
+	os.Exit(code)
+}
+
+// Test a low-level simulation of Client/Server handshake.
+// Does not use KEMs/OKEMs but
+func TestDrivelcrypto(t *testing.T) {
 	for range numRepeats {
-		testHandshake(t)
+		testDrivelcrypto(t)
 	}
 }
 
-func testHandshake(t *testing.T) {
+func testDrivelcrypto(t *testing.T) {
 	var pseudorandomKey = make([]byte, 32)
 	var info = make([]byte, 16)
 
@@ -151,6 +165,10 @@ func testHandshake(t *testing.T) {
 	var input3 = make([]byte, 45)
 	var input4 = make([]byte, 560)
 	var input5 = make([]byte, 1200)
+
+	csrand.Bytes(input3)
+	csrand.Bytes(input4)
+	csrand.Bytes(input5)
 
 	cdSS, err := cryptodata.New(input1, len(input1))
 	if err != nil {

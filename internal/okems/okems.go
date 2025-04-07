@@ -77,6 +77,11 @@ func (data PublicKey) Hex() string {
 	return (cryptodata.CryptoData)(data).Hex()
 }
 
+// Copy returns a newly allocated byte slice containing the public key.
+func (data PublicKey) Copy() []byte {
+	return (cryptodata.CryptoData)(data).Copy()
+}
+
 // PublicKeyFromHex returns an OKEM public key from its hexdecimal representation.
 // Inputs must correpsond to outputs of [PublicKey.Hex] function.
 func PublicKeyFromHex(okem ObfuscatedKem, encodedPublic string) (PublicKey, error) {
@@ -104,6 +109,11 @@ func (data PrivateKey) Bytes() []byte {
 // Hex returns the hexdecimal representation of the private key.
 func (data PrivateKey) Hex() string {
 	return (cryptodata.CryptoData)(data).Hex()
+}
+
+// Copy returns a newly allocated byte slice containing the private key.
+func (data PrivateKey) Copy() []byte {
+	return (cryptodata.CryptoData)(data).Copy()
 }
 
 // ObfuscatedCiphertext is an OKEM ciphertext.

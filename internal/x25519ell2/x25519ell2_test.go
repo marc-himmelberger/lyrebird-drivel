@@ -18,6 +18,8 @@ package x25519ell2
 import (
 	"bytes"
 	"crypto/rand"
+	"flag"
+	"os"
 	"testing"
 
 	"filippo.io/edwards25519/field"
@@ -27,7 +29,18 @@ import (
 )
 
 // Number of times to repeat exchanges or encoding tests.
-const numRepeats = 100
+var numRepeats int
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if testing.Short() {
+		numRepeats = 10
+	} else {
+		numRepeats = 100
+	}
+	code := m.Run()
+	os.Exit(code)
+}
 
 func TestX25519Ell2(t *testing.T) {
 	t.Run("Constants", testConstants)

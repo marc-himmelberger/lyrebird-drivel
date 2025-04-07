@@ -109,7 +109,9 @@ func (wrapper *OqsWrapperKEM) Encaps(public kems.PublicKey) (kems.Ciphertext, ke
 }
 func (wrapper *OqsWrapperKEM) Decaps(private kems.PrivateKey, ciphertext kems.Ciphertext) (kems.SharedSecret, error) {
 	var kem oqs.KeyEncapsulation
-	kem.Init(wrapper.details.Name, private.Bytes())
+	// Copy() is needed to prevent kem.Clean() from zeroing the private key.
+	// However, we need kem.Clean() as there is no other way to free the C struct.
+	kem.Init(wrapper.details.Name, private.Copy())
 	defer kem.Clean()
 
 	ciphertext.AssertSize(wrapper.details.LengthCiphertext)

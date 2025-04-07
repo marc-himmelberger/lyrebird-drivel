@@ -56,16 +56,16 @@ func (encoder *ClassicMcEliecePadder) EncodeCiphertext(obfCiphertext []byte, kem
 		return false
 	}
 
-	// Mask selects empty bits
+	// Mask selects 5 empty bits
 	var mask byte = 0xf8
 	copy(obfCiphertext, kemCiphertext)
 
 	if obfCiphertext[193]&mask != 0 {
-		panic("encoding_classic_mceliece: Non-zero padding in KEM")
+		panic("encoding_classic_mceliece: Non-zero padding found in KEM")
 	}
 	obfCiphertext[193] |= (mask & rand_byte[0])
-	if obfCiphertext[193]&mask == 0 {
-		panic("encoding_classic_mceliece: Padding did not work?") // TODO rm
+	if obfCiphertext[193]&mask != mask&rand_byte[0] {
+		panic("encoding_classic_mceliece: Padding did not work")
 	}
 	return true
 }
@@ -74,6 +74,9 @@ func (encoder *ClassicMcEliecePadder) DecodeCiphertext(kemCiphertext []byte, obf
 	var mask byte = 0xf8
 	copy(kemCiphertext, obfCiphertext)
 	kemCiphertext[193] &= (^mask)
+	if kemCiphertext[193]&mask != 0 {
+		panic("encoding_classic_mceliece: Unpadding did not work")
+	}
 }
 
 var _ EncapsThenEncode = (*ClassicMcEliecePadder)(nil)
