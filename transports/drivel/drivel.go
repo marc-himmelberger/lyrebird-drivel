@@ -63,7 +63,6 @@ const (
 	privateKeyArg = "private-key"
 	seedArg       = "drbg-seed"
 	iatArg        = "iat-mode"
-	certArg       = "cert"
 
 	biasCmdArg = "drivel-distBias"
 
@@ -116,7 +115,7 @@ func (t *Transport) Name() string {
 
 // ClientFactory returns a new drivelClientFactory instance.
 func (t *Transport) ClientFactory(stateDir string) (base.ClientFactory, error) {
-	cf := &drivelClientFactory{transport: t}
+	cf := &drivelClientFactory{transport: t, stateDir: stateDir}
 	return cf, nil
 }
 
@@ -139,8 +138,7 @@ func (t *Transport) ServerFactory(stateDir string, args *pt.Args) (base.ServerFa
 
 	// Store the arguments that should appear in our descriptor for the clients.
 	ptArgs := pt.Args{}
-	// XXX: Store only NodeID here
-	ptArgs.Add(certArg, st.cert.String())
+	ptArgs.Add(nodeIDArg, st.nodeID.Hex())
 	ptArgs.Add(iatArg, strconv.Itoa(st.iatMode))
 
 	// Initialize the replay filter.
@@ -162,6 +160,7 @@ func (t *Transport) ServerFactory(stateDir string, args *pt.Args) (base.ServerFa
 
 type drivelClientFactory struct {
 	transport base.Transport
+	stateDir  string
 }
 
 func (cf *drivelClientFactory) Transport() base.Transport {
@@ -174,36 +173,28 @@ func (cf *drivelClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 
 	// INFO this receives B, NodeID!
 
-	// The "new" (version >= 0.0.3) bridge lines use a unified "cert" argument
-	// for the Node ID and Public Key.
-	// XXX: Store only NodeID here, load public key from some file next to torrc?
-	// XXX: Can then also remove old and new style
-	certStr, ok := args.Get(certArg)
-	if ok {
-		cert, err := serverCertFromString(okemScheme, certStr)
-		if err != nil {
-			return nil, err
-		}
-		nodeID, publicKey = cert.unpack(okemScheme)
-	} else {
-		// The "old" style (version <= 0.0.2) bridge lines use separate Node ID
-		// and Public Key arguments in Base16 encoding and are a UX disaster.
-		nodeIDStr, ok := args.Get(nodeIDArg)
-		if !ok {
-			return nil, fmt.Errorf("missing argument '%s'", nodeIDArg)
-		}
-		var err error
-		if nodeID, err = drivelcrypto.NodeIDFromHex(nodeIDStr); err != nil {
-			return nil, err
-		}
+	// Unlike obfs4, Drivel uses only a single "node-id" argument in the SOCKS proxy.
+	// This is due to the exceedingly large public keys that do not fit within a 510B limit.
+	// See also: https://gitlab.torproject.org/tpo/anti-censorship/team/-/issues/130
+	nodeIDStr, ok := args.Get(nodeIDArg)
+	if !ok {
+		return nil, fmt.Errorf("missing argument '%s'", nodeIDArg)
+	}
+	nodeID, err := drivelcrypto.NodeIDFromHex(nodeIDStr)
+	if err != nil {
+		return nil, err
+	}
 
-		publicKeyStr, ok := args.Get(publicKeyArg)
-		if !ok {
-			return nil, fmt.Errorf("missing argument '%s'", publicKeyArg)
-		}
-		if publicKey, err = okems.PublicKeyFromHex(okemScheme, publicKeyStr); err != nil {
-			return nil, err
-		}
+	// The public keys must be deposited in the clients stateDir.
+	// The file is identified by the first bytes of nodeID in hex.
+	// The file contains the public key in JSON format, see [statefile.go]
+	publicKeyStr, err := publicKeyStrFromFile(cf.stateDir, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	publicKey, err = okems.PublicKeyFromHex(okemScheme, publicKeyStr)
+	if err != nil {
+		return nil, err
 	}
 
 	// IAT config is common across the two bridge line formats.

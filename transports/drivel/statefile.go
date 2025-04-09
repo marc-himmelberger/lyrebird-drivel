@@ -28,7 +28,6 @@
 package drivel
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -39,15 +38,21 @@ import (
 	pt "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/goptlib"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/drbg"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/drivelcrypto"
 )
 
 const (
-	stateFile  = "drivel_state.json"
-	bridgeFile = "drivel_bridgeline.txt"
+	stateFile     = "drivel_state.json"
+	bridgeFile    = "drivel_bridgeline.txt"
+	keyFileFormat = "key-%s.pub.json"
 )
+
+type jsonPublicKey struct {
+	OkemName  string `json:"okem"`
+	NodeID    string `json:"node-id"`
+	PublicKey string `json:"public-key"`
+}
 
 type jsonServerState struct {
 	KemName    string `json:"kem"`
@@ -59,69 +64,15 @@ type jsonServerState struct {
 	IATMode    int    `json:"iat-mode"`
 }
 
-// Number of bytes in a valid drivelServerCert for the given OKEM
-func getCertLength(okem okems.ObfuscatedKem) int {
-	return drivelcrypto.NodeIDLength + okem.LengthPublicKey()
-}
-
-// XXX: Switch to using only NodeID? Use NodeID in drivelcrypto and add String() and unpack()
-type drivelServerCert struct {
-	raw []byte
-}
-
-func (cert *drivelServerCert) String() string {
-	return base64.StdEncoding.EncodeToString(cert.raw)
-}
-
-func (cert *drivelServerCert) unpack(okem okems.ObfuscatedKem) (*drivelcrypto.NodeID, okems.PublicKey) {
-	if len(cert.raw) != getCertLength(okem) {
-		panic(fmt.Sprintf("cert length %d is invalid", len(cert.raw)))
-	}
-
-	nodeID, err := drivelcrypto.NewNodeID(cert.raw[:drivelcrypto.NodeIDLength])
-	if err != nil {
-		panic("statefile: unable to construct node ID from bytes: " + err.Error())
-	}
-	pub, err := cryptodata.New(cert.raw[drivelcrypto.NodeIDLength:], okem.LengthPublicKey())
-	if err != nil {
-		panic("statefile: unable to construct public key from bytes: " + err.Error())
-	}
-
-	return nodeID, okems.PublicKey(pub)
-}
-
-func serverCertFromString(okem okems.ObfuscatedKem, encoded string) (*drivelServerCert, error) {
-	decoded, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode cert: %s", err)
-	}
-
-	if len(decoded) != getCertLength(okem) {
-		return nil, fmt.Errorf("cert length %d is invalid", len(decoded))
-	}
-
-	return &drivelServerCert{raw: decoded}, nil
-}
-
-func serverCertFromState(st *drivelServerState) *drivelServerCert {
-	cert := new(drivelServerCert)
-	cert.raw = append(st.nodeID.Bytes()[:], st.identityKey.Public().Bytes()...)
-	return cert
-}
-
 type drivelServerState struct {
 	nodeID      *drivelcrypto.NodeID
 	identityKey *okems.Keypair
 	drbgSeed    *drbg.Seed
 	iatMode     int
-
-	// XXX: Remove
-	cert *drivelServerCert
 }
 
 func (st *drivelServerState) clientString() string {
-	// XXX: Change name
-	return fmt.Sprintf("%s=%s %s=%d", certArg, st.cert, iatArg, st.iatMode)
+	return fmt.Sprintf("%s=%s %s=%d", nodeIDArg, st.nodeID.Hex(), iatArg, st.iatMode)
 }
 
 func serverStateFromArgs(stateDir string, args *pt.Args, okem okems.ObfuscatedKem) (*drivelServerState, error) {
@@ -188,7 +139,6 @@ func serverStateFromJSONServerState(stateDir string, js *jsonServerState, okem o
 		return nil, fmt.Errorf("invalid iat-mode '%d'", js.IATMode)
 	}
 	st.iatMode = js.IATMode
-	st.cert = serverCertFromState(st)
 
 	// Generate a human readable summary of the configured endpoint.
 	if err = newBridgeFile(stateDir, st); err != nil {
@@ -218,6 +168,36 @@ func jsonServerStateFromFile(stateDir string, js *jsonServerState, okem okems.Ob
 	return nil
 }
 
+func publicKeyFileNameFromNodeIdHex(nodeIdHex string) string {
+	return fmt.Sprintf(keyFileFormat, nodeIdHex[:16])
+}
+
+func publicKeyStrFromFile(stateDir string, nodeID *drivelcrypto.NodeID) (string, error) {
+	fPath := path.Join(stateDir, publicKeyFileNameFromNodeIdHex(nodeID.Hex()))
+	f, err := ioutil.ReadFile(fPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("cannot find required public key file '%s': %s", fPath, err)
+		}
+		return "", err
+	}
+
+	js := new(jsonPublicKey)
+
+	if err := json.Unmarshal(f, js); err != nil {
+		return "", fmt.Errorf("failed to load keyfile '%s': %s", fPath, err)
+	}
+
+	if js.NodeID != nodeID.Hex() {
+		return "", fmt.Errorf("failed to load keyfile '%s': invalid nodeID '%s', should be '%s'", fPath, js.NodeID, nodeID.Hex())
+	}
+	if js.OkemName != okemScheme.Name() {
+		return "", fmt.Errorf("failed to load keyfile '%s': invalid okemName '%s', should be '%s'", fPath, js.OkemName, okemScheme.Name())
+	}
+
+	return js.PublicKey, nil
+}
+
 func newJSONServerState(stateDir string, js *jsonServerState, okem okems.ObfuscatedKem) (err error) {
 	// Generate everything a server needs, using the cryptographic PRNG.
 	// INFO this generates the initial identity!
@@ -236,6 +216,8 @@ func newJSONServerState(stateDir string, js *jsonServerState, okem okems.Obfusca
 	st.iatMode = iatNone
 
 	// Encode it into JSON format and write the state file.
+	js.KemName = kemScheme.Name()
+	js.OkemName = okemScheme.Name()
 	js.NodeID = st.nodeID.Hex()
 	js.PrivateKey = st.identityKey.Private().Hex()
 	js.PublicKey = st.identityKey.Public().Hex()
@@ -258,6 +240,8 @@ func writeJSONServerState(stateDir string, js *jsonServerState) error {
 	return nil
 }
 
+// Writes the bridge line to its own file every time the server starts.
+// Additionally, the public key is also written to its own file for distribution.
 func newBridgeFile(stateDir string, st *drivelServerState) error {
 	const prefix = "# drivel torrc client bridge line\n" +
 		"#\n" +
@@ -269,13 +253,40 @@ func newBridgeFile(stateDir string, st *drivelServerState) error {
 		"# to contain the actual values:\n" +
 		"#  <IP ADDRESS>  - The public IP address of your drivel bridge.\n" +
 		"#  <PORT>        - The TCP/IP port of your drivel bridge.\n" +
-		"#  <FINGERPRINT> - The bridge's fingerprint.\n\n"
+		"#  <FINGERPRINT> - The bridge's fingerprint.\n" +
+		"# Also distribute the public key file key-<KEYID>.pub.json in\n" +
+		"# unmodified form, where <KEYID> is the beginning of the\n" +
+		"# 'node-id' value below. Clients need to put this file\n" +
+		"# into which clients require.\n\n"
 
 	bridgeLine := fmt.Sprintf("Bridge drivel <IP ADDRESS>:<PORT> <FINGERPRINT> %s\n",
 		st.clientString())
 
 	tmp := []byte(prefix + bridgeLine)
 	if err := ioutil.WriteFile(path.Join(stateDir, bridgeFile), tmp, 0600); err != nil {
+		return err
+	}
+
+	// Also encode public key for its own file
+	jsPk := new(jsonPublicKey)
+
+	jsPk.OkemName = okemScheme.Name()
+	jsPk.NodeID = st.nodeID.Hex()
+	jsPk.PublicKey = st.identityKey.Public().Hex()
+
+	return writeJSONPublicKey(stateDir, jsPk)
+}
+
+func writeJSONPublicKey(stateDir string, js *jsonPublicKey) error {
+	fPath := path.Join(stateDir, publicKeyFileNameFromNodeIdHex(js.NodeID))
+
+	encoded, err := json.Marshal(js)
+	if err != nil {
+		return err
+	}
+
+	err = ioutil.WriteFile(fPath, encoded, 0644)
+	if err != nil {
 		return err
 	}
 
