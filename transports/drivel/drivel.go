@@ -139,6 +139,7 @@ func (t *Transport) ServerFactory(stateDir string, args *pt.Args) (base.ServerFa
 
 	// Store the arguments that should appear in our descriptor for the clients.
 	ptArgs := pt.Args{}
+	// XXX: Store only NodeID here
 	ptArgs.Add(certArg, st.cert.String())
 	ptArgs.Add(iatArg, strconv.Itoa(st.iatMode))
 
@@ -175,6 +176,8 @@ func (cf *drivelClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 
 	// The "new" (version >= 0.0.3) bridge lines use a unified "cert" argument
 	// for the Node ID and Public Key.
+	// XXX: Store only NodeID here, load public key from some file next to torrc?
+	// XXX: Can then also remove old and new style
 	certStr, ok := args.Get(certArg)
 	if ok {
 		cert, err := serverCertFromString(okemScheme, certStr)

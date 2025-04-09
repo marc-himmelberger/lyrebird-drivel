@@ -64,6 +64,7 @@ func getCertLength(okem okems.ObfuscatedKem) int {
 	return drivelcrypto.NodeIDLength + okem.LengthPublicKey()
 }
 
+// XXX: Switch to using only NodeID? Use NodeID in drivelcrypto and add String() and unpack()
 type drivelServerCert struct {
 	raw []byte
 }
@@ -114,10 +115,12 @@ type drivelServerState struct {
 	drbgSeed    *drbg.Seed
 	iatMode     int
 
+	// XXX: Remove
 	cert *drivelServerCert
 }
 
 func (st *drivelServerState) clientString() string {
+	// XXX: Change name
 	return fmt.Sprintf("%s=%s %s=%d", certArg, st.cert, iatArg, st.iatMode)
 }
 
