@@ -45,7 +45,7 @@ import (
 const (
 	stateFile     = "drivel_state.json"
 	bridgeFile    = "drivel_bridgeline.txt"
-	keyFileFormat = "key-%s.pub.json"
+	keyFileFormat = "drivel_key-%s.pub.json"
 )
 
 type jsonPublicKey struct {
@@ -254,7 +254,7 @@ func newBridgeFile(stateDir string, st *drivelServerState) error {
 		"#  <IP ADDRESS>  - The public IP address of your drivel bridge.\n" +
 		"#  <PORT>        - The TCP/IP port of your drivel bridge.\n" +
 		"#  <FINGERPRINT> - The bridge's fingerprint.\n" +
-		"# Also distribute the public key file key-<KEYID>.pub.json in\n" +
+		"# Also distribute the public key file drivel_key-<KEYID>.pub.json in\n" +
 		"# unmodified form, where <KEYID> is the beginning of the\n" +
 		"# 'node-id' value below. Clients need to put this file\n" +
 		"# into which clients require.\n\n"
