@@ -204,3 +204,90 @@ func testDrivelcrypto(t *testing.T) {
 		t.Fatal("DrivelCommon returned nil AUTH")
 	}
 }
+
+func BenchmarkKdfExpand(b *testing.B) {
+	prKey := make([]byte, 32)
+	csrand.Bytes(prKey)
+	info := []byte("benchmarking")
+	okmLen := 512
+
+	for b.Loop() {
+		KdfExpand(prKey, info, okmLen)
+	}
+}
+
+func BenchmarkPrfCombine(b *testing.B) {
+	input1 := make([]byte, 64)
+	input2 := make([]byte, 64)
+	csrand.Bytes(input1)
+	csrand.Bytes(input2)
+
+	for b.Loop() {
+		PrfCombine(input1, input2)
+	}
+}
+
+func BenchmarkXorEncryptDecrypt(b *testing.B) {
+	input1 := make([]byte, 32)
+	input2 := make([]byte, 512)
+	csrand.Bytes(input1)
+	csrand.Bytes(input2)
+
+	for b.Loop() {
+		XorEncryptDecrypt(input1, input2)
+	}
+}
+
+func BenchmarkMessageMark(b *testing.B) {
+	input1 := make([]byte, 32)
+	input2 := make([]byte, 512)
+	csrand.Bytes(input1)
+	csrand.Bytes(input2)
+
+	for b.Loop() {
+		MessageMark(input1, true, input2)
+	}
+}
+
+func BenchmarkMessageMAC(b *testing.B) {
+	input1 := make([]byte, 32)
+	input2 := make([]byte, 8192)
+	csrand.Bytes(input1)
+	csrand.Bytes(input2)
+
+	for b.Loop() {
+		MessageMAC(input1, true, input2, 50123)
+	}
+}
+
+func BenchmarkDrivelCommon(b *testing.B) {
+	var pseudorandomKey = make([]byte, 32)
+	var input1 = make([]byte, 32)
+	var input2 = make([]byte, 32)
+	var input3 = make([]byte, 45)
+	var input4 = make([]byte, 560)
+	var input5 = make([]byte, 1200)
+
+	csrand.Bytes(pseudorandomKey)
+	csrand.Bytes(input1)
+	csrand.Bytes(input2)
+	csrand.Bytes(input3)
+	csrand.Bytes(input4)
+	csrand.Bytes(input5)
+
+	cdSS, _ := cryptodata.New(input1, len(input1))
+	cdPK, _ := cryptodata.New(input2, len(input2))
+	cdOCT, _ := cryptodata.New(input3, len(input3))
+	cdPK2, _ := cryptodata.New(input4, len(input4))
+	cdCT, _ := cryptodata.New(input5, len(input5))
+	sharedKemSecret := kems.SharedSecret(cdSS)
+	serverOkemPublicKey := okems.PublicKey(cdPK)
+	okemCiphertext := okems.ObfuscatedCiphertext(cdOCT)
+	clientKemPublicKey := kems.PublicKey(cdPK2)
+	kemCiphertext := kems.Ciphertext(cdCT)
+
+	for b.Loop() {
+		DrivelCommon(pseudorandomKey, sharedKemSecret, serverOkemPublicKey, okemCiphertext, clientKemPublicKey, kemCiphertext)
+	}
+
+}

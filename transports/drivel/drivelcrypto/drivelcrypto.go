@@ -32,7 +32,6 @@
 package drivelcrypto // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/drivelcrypto"
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -80,7 +79,6 @@ var tMacServer = append(protoID, []byte(":mac_s")...)
 var tDerive = append(protoID, []byte(":derive_key")...)
 var tSKey = append(protoID, []byte(":key_extract")...)
 var tKeyVerify = append(protoID, []byte(":server_mac")...)
-var tXorExpand = append(protoID, []byte(":enc_expand")...)
 
 // NodeIDLengthError is the error returned when the node ID being imported is
 // an invalid length.
@@ -166,18 +164,24 @@ func DrivelCommon(ephemeralSecret []byte, sharedKemSecret kems.SharedSecret,
 	finalSecret = PrfCombine(derivedSecret, sharedKemSecret.Bytes())
 
 	// context = pk_S | c_S | pk_e | c_e | protoID
-	var context bytes.Buffer
-	context.Write(serverOkemPublicKey.Bytes())
-	context.Write(okemCiphertext.Bytes())
-	context.Write(clientKemPublicKey.Bytes())
-	context.Write(kemCiphertext.Bytes())
-	context.Write(protoID)
+	context := make([]byte, 0, len(serverOkemPublicKey.Bytes())+
+		len(okemCiphertext.Bytes())+
+		len(clientKemPublicKey.Bytes())+
+		len(kemCiphertext.Bytes())+
+		len(protoID)+
+		max(len(tSKey)+len(tKeyVerify)),
+	)
+	context = append(context, serverOkemPublicKey.Bytes()...)
+	context = append(context, okemCiphertext.Bytes()...)
+	context = append(context, clientKemPublicKey.Bytes()...)
+	context = append(context, kemCiphertext.Bytes()...)
+	context = append(context, protoID...)
 
 	// skey = F1(FS, context | ":key_extract")
-	keySeed = (*KeySeed)(KdfExpand(finalSecret, append(context.Bytes(), tSKey...), KeySeedLength))
+	keySeed = (*KeySeed)(KdfExpand(finalSecret, append(context, tSKey...), KeySeedLength))
 
 	// auth = F1(FS, context | ":server_mac")
-	auth = (*Auth)(KdfExpand(finalSecret, append(context.Bytes(), tKeyVerify...), AuthLength))
+	auth = (*Auth)(KdfExpand(finalSecret, append(context, tKeyVerify...), AuthLength))
 
 	return keySeed, auth
 }
@@ -190,11 +194,11 @@ func MessageMark(ephermalSecret []byte, isClient bool, msgMark []byte) (mark []b
 		tag = tMarkClient
 	}
 
-	var infoBuf bytes.Buffer
-	_, _ = infoBuf.Write(msgMark)
-	_, _ = infoBuf.Write(tag)
+	infoBuf := make([]byte, 0, len(msgMark)+len(tag))
+	infoBuf = append(infoBuf, msgMark...)
+	infoBuf = append(infoBuf, tag...)
 
-	return KdfExpand(ephermalSecret, infoBuf.Bytes(), MarkLength)
+	return KdfExpand(ephermalSecret, infoBuf, MarkLength)
 }
 
 // MessageMAC computes a MAC with HKDF-SHA256 over the entire `msg` (should include the mark)
@@ -210,12 +214,18 @@ func MessageMAC(ephermalSecret []byte, isClient bool, msg []byte, epochHour int6
 	// An 8-digit representation lasts until at least the year 12 000
 	epochHourStr := fmt.Sprintf("%08d", epochHour)
 
-	var infoBuf bytes.Buffer
-	_, _ = infoBuf.Write(msg)
-	_, _ = infoBuf.Write([]byte(epochHourStr))
-	_, _ = infoBuf.Write(tag)
+	// This incurs quite a bit of memory overhead because:
+	// a) info is required to be a contiguous byte slice
+	// b) info is input into the HMAC with every generated block
+	// Obfs4 used an HMAC directly avoiding copies via hmac.Write()
+	// XXX: Could we do better by doing HMAC directly?
+	// XXX: Can we even reuse an HMAC by saving it into the handshake struct (if key is reused)?
+	infoBuf := make([]byte, 0, len(msg)+len(epochHourStr)+len(tag))
+	infoBuf = append(infoBuf, msg...)
+	infoBuf = append(infoBuf, []byte(epochHourStr)...)
+	infoBuf = append(infoBuf, tag...)
 
-	return KdfExpand(ephermalSecret, infoBuf.Bytes(), MacLength)
+	return KdfExpand(ephermalSecret, infoBuf, MacLength)
 }
 
 // KdfExpand expands pseudorandomKey via HKDF-SHA256 and returns `okm_len` bytes
@@ -240,7 +250,6 @@ func KdfExpand(pseudorandomKey []byte, info []byte, okmLen int) []byte {
 // Corresponds to F_2 from https://eprint.iacr.org/2025/408.pdf
 func PrfCombine(input1 []byte, input2 []byte) []byte {
 	prf := hmac.New(sha256.New, input1)
-	prf.Reset()
 	_, _ = prf.Write(input2)
 	return prf.Sum(nil)
 }

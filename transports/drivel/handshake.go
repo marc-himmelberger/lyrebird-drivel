@@ -231,7 +231,7 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 	encClientKemPublicKey = drivelcrypto.XorEncryptDecrypt(hs.encryptionKey1, clientKemPublicKey.Bytes())
 
 	// buf will be used to construct the final message
-	var buf bytes.Buffer
+	buf := bytes.NewBuffer(make([]byte, 0, maxHandshakeLength))
 
 	// Start building message as epk_e | c_S
 	buf.Write(encClientKemPublicKey)
@@ -517,7 +517,7 @@ func (hs *serverHandshake) generateHandshake() ([]byte, error) {
 	}
 
 	// buf will be used to construct the final message
-	var buf bytes.Buffer
+	buf := bytes.NewBuffer(make([]byte, 0, maxHandshakeLength))
 
 	// Start building message as ect_e
 	buf.Write(hs.encClientKemCiphertext)
