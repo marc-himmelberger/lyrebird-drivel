@@ -32,41 +32,58 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
 
+const (
+	q    int = 3329
+	n    int = 256
+	eta2 int = 2
+)
+
 // An implementation of the ML-KEM obfuscator "Kemeleon" (Non-Rejection Sampling Variant).
 // In order to use ML-KEM as an OKEM, this encoding is required for all parameter sets.
 // See also https://eprint.iacr.org/2024/1086.pdf and https://datatracker.ietf.org/doc/draft-irtf-cfrg-kemeleon/
 // The implementation uses inspiration from https://github.com/jmwample/kemeleon and https://github.com/rozbb/ct-kemeleon
 type KemeleonEncoder struct {
-	// Parameters with defaults or set in Init
+	// Parameters with defaults or set in Init according to parameter set
 	t int
-	q int `default:"3329"`
-	n int `default:"256"`
 
-	kemCtxtLength      int // Length in bytes of KEM ciphertexts
+	kemCtxtLength      int // Length in bytes of KEM ciphertexts, used for tests
 	kemeleonCtxtLength int // Length in bytes of Kemeleon outputs
 
 	// Parameters from FIPS203
-	k  int
-	du int
-	dv int
+	k    int
+	eta1 int
+	du   int
+	dv   int
 }
 
 // Verifies KEM and sets the parameter "t" according to the targeted security level
 func (encoder *KemeleonEncoder) Init(kem kems.KeyEncapsulationMechanism) {
-	// Verify KEM and set parameters
+	// Verify KEM and set parameters (values of t based on FIPS203, Table 2)
 	switch kem.Name() {
 	case "ML-KEM-512":
 		encoder.t = 128
 		encoder.kemCtxtLength = 768
 		encoder.kemeleonCtxtLength = 1140
+		encoder.k = 2
+		encoder.eta1 = 3
+		encoder.du = 10
+		encoder.dv = 4
 	case "ML-KEM-768":
 		encoder.t = 192
 		encoder.kemCtxtLength = 1088
 		encoder.kemeleonCtxtLength = 1514
+		encoder.k = 3
+		encoder.eta1 = 2
+		encoder.du = 10
+		encoder.dv = 4
 	case "ML-KEM-1024":
 		encoder.t = 256
 		encoder.kemCtxtLength = 1568
 		encoder.kemeleonCtxtLength = 1889 // XXX: Are these Kemeleon numbers up-to-date with NR,I-D?
+		encoder.k = 4
+		encoder.eta1 = 2
+		encoder.du = 11
+		encoder.dv = 5
 	default:
 		panic("encoding_mlkem_kemeleon: This encoder is only valid for 'ML-KEM-512', 'ML-KEM-768', 'ML-KEM-1024'. Not " + kem.Name())
 	}
@@ -75,16 +92,74 @@ func (encoder *KemeleonEncoder) LengthObfuscatedCiphertext() int {
 	return encoder.kemeleonCtxtLength
 }
 
+// Parses a ciphertext as a concatenation of two values: c1 || c2
+func (encoder *KemeleonEncoder) splitCtxt(ctxt []byte) (c1 []byte, c2 []byte) {
+	// c1 = ByteEncode_du(Compress_du(u))
+	// c2 = ByteEncode_dv(Compress_dv(v))
+
+	// ByteEncode turns one or more d-bit integers into a byte string.
+	// Compress converts field elements from Z_q to d-bit integers.
+	// The resulting byte array is 32*d bytes long for each integer.
+	// c1 contains k integers, while c2 contains only one.
+	length_c1 := encoder.du * 32 * encoder.k
+	length_c2 := encoder.dv * 32
+
+	return ctxt[:length_c1], ctxt[length_c1 : length_c1+length_c2]
+}
+
+// Executes ByteDecode from FIPS203 once on a d*32-byte string to get 256 d-bit integers
+func (encoder *KemeleonEncoder) byteDecodeSingle(d int, encoded []byte) (integers [256]int) {
+	// Take d bits at a time, convert to int, add to array.
+	// These d-bit blocks may go across byte boundaries.
+
+	// start of the next d-bit block, measured in bits from the start of encoded
+	var bitOffset int = 0
+
+	for i := range 256 {
+		var value int = 0
+		for bit := 0; bit < d; bit++ {
+			// Look for each bit separately
+			byteIndex := (bitOffset + bit) / 8
+			bitIndex := (bitOffset + bit) % 8
+			bitValue := (encoded[byteIndex] >> bitIndex) & 1
+			value |= int(bitValue) << bit
+		}
+		integers[i] = value
+		bitOffset += d
+	}
+	return
+}
+
+// Executes ByteDecode from FIPS203 twice to convert both parts of the ciphertext
+func (encoder *KemeleonEncoder) decodeBytes(c1 []byte, c2 []byte) (compressedU []int, compressedV []int) {
+	// We execute ByteDecode: k times on c1 to get du-bit integers,
+	// and then once on c2 to get dv-bit integers.
+	// Each call to ByteDecode consumes block_size bytes for d=du
+	block_size := 32 * encoder.du
+	compressedU = make([]int, 0, 256*encoder.k)
+	for i := range encoder.k {
+		intArr := encoder.byteDecodeSingle(encoder.du, c1[i*block_size:(i+1)*block_size])
+		compressedU = append(compressedU, intArr[:]...)
+	}
+	intArr := encoder.byteDecodeSingle(encoder.dv, c2)
+	compressedV = intArr[:]
+	return
+}
+
 // Corresponds to EncodeCtxt in the Internet Draft
 func (encoder *KemeleonEncoder) EncodeCiphertext(obfCiphertext []byte, kemCiphertext []byte) (ok bool) {
 	// TODO Consult https://github.com/C2SP/CCTV/blob/main/ML-KEM/intermediate/ML-KEM-1024.txt for debugging
 
+	copy(obfCiphertext, kemCiphertext)
+
 	// TODO implement
+	return true
 }
 
 // Corresponds to DecodeCtxt in the Internet Draft
 func (encoder *KemeleonEncoder) DecodeCiphertext(kemCiphertext []byte, obfCiphertext []byte) {
 	// TODO implement
+	copy(kemCiphertext, obfCiphertext)
 }
 
 var _ encaps_encode.EncapsThenEncode = (*KemeleonEncoder)(nil)
