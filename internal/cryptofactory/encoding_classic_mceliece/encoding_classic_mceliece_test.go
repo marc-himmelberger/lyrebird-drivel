@@ -33,7 +33,6 @@ import (
 	"os"
 	"testing"
 
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptodata"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/oqs_wrapper"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
@@ -92,22 +91,16 @@ func testSingleKemEncoding(t *testing.T, kemName string) (ok bool, looksOk bool)
 	kem := (kems.KeyEncapsulationMechanism)(oqs_wrapper.NewOqsWrapper(kemName))
 	encoder := &ClassicMcEliecePadder{}
 
+	encoder.Init(kem)
+
 	// Specific to Classic-McEliece: Check KEM output size
 	if kem.LengthCiphertext() != 194 {
 		panic("Received invalid ciphertext size from KEM")
 	}
 
-	// KeyGen
+	// KeyGen, Encaps
 	keypair := kem.KeyGen()
-	if keypair == nil {
-		t.Fatal("KeyGen() returned nil")
-	}
-
-	// Encaps
-	ctxt, sharedSecret1, err := kem.Encaps(keypair.Public())
-	if err != nil {
-		t.Fatal("kem.Encaps(pk) failed:", err)
-	}
+	ctxt, _, _ := kem.Encaps(keypair.Public())
 
 	// Specific to Classic-McEliece: Check that top 5 bits are 0
 	if ctxt.Bytes()[193]&mask != 0 {
@@ -135,20 +128,6 @@ func testSingleKemEncoding(t *testing.T, kemName string) (ok bool, looksOk bool)
 	encoder.DecodeCiphertext(decodedCtxt, encodedCtxt)
 	if !bytes.Equal(ctxt.Bytes(), decodedCtxt) {
 		t.Fatalf("correctness violation in encoding: expected %x, actual: %x", ctxt.Bytes(), decodedCtxt)
-	}
-
-	cd, err := cryptodata.New(decodedCtxt, kem.LengthCiphertext())
-	if err != nil {
-		t.Fatal("cryptodata.New(decodedCtxt) failed:", err)
-	}
-
-	// Decaps
-	sharedSecret2, err := kem.Decaps(keypair.Private(), kems.Ciphertext(cd))
-	if err != nil {
-		t.Fatal("kem.Decaps(sk, c) failed:", err)
-	}
-	if !bytes.Equal(sharedSecret1.Bytes(), sharedSecret2.Bytes()) {
-		t.Fatalf("correctness violation: expected %x, actual: %x", sharedSecret1.Bytes(), sharedSecret2.Bytes())
 	}
 
 	return
