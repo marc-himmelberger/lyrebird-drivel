@@ -28,6 +28,7 @@
 package encoding_kemeleon
 
 import (
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encaps_encode"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
 
@@ -65,14 +66,9 @@ func (encoder *KemeleonEncoder) Init(kem kems.KeyEncapsulationMechanism) {
 	case "ML-KEM-1024":
 		encoder.t = 256
 		encoder.kemCtxtLength = 1568
-		encoder.kemeleonCtxtLength = 1889 // XXX: Are these Kemeleon numbers correct?
+		encoder.kemeleonCtxtLength = 1889 // XXX: Are these Kemeleon numbers up-to-date with NR,I-D?
 	default:
 		panic("encoding_mlkem_kemeleon: This encoder is only valid for 'ML-KEM-512', 'ML-KEM-768', 'ML-KEM-1024'. Not " + kem.Name())
-	}
-
-	// Verify KEM output size is as expected
-	if kem.LengthCiphertext() != encoder.kemCtxtLength {
-		panic("encoding_mlkem_kemeleon: Received invalid ciphertext size from KEM")
 	}
 }
 func (encoder *KemeleonEncoder) LengthObfuscatedCiphertext() int {
@@ -91,4 +87,4 @@ func (encoder *KemeleonEncoder) DecodeCiphertext(kemCiphertext []byte, obfCipher
 	// TODO implement
 }
 
-var _ EncapsThenEncode = (*KemeleonEncoder)(nil)
+var _ encaps_encode.EncapsThenEncode = (*KemeleonEncoder)(nil)

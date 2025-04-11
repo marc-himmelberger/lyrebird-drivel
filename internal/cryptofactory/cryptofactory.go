@@ -35,14 +35,21 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encaps_encode"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encoding_classic_mceliece"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encoding_kemeleon"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/oqs_wrapper"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/x25519ell2"
 )
 
-// Atomic KEMs. Additional KEMs are added by oqs_wrapper.go
+// Atomic KEMs. Additional KEMs are added during [init()]
 var allKemNames = []string{
 	"x25519",
+}
+
+func init() {
+	// Adds OQS KEMs for use in cryptofactory.
+	// Import dependency guarantees that oqs_wrapper is initialized first.
+	allKemNames = append(allKemNames, oqs_wrapper.OqsEnabledKEMs...)
 }
 
 // List of all supported KEM names.
@@ -90,8 +97,8 @@ Legal values for names are:
 func NewKem(kemName string) kems.KeyEncapsulationMechanism {
 	if kemName == "x25519" {
 		return &x25519ell2.X25519KEM{}
-	} else if slices.Contains(oqsEnabledKEMs, kemName) {
-		return NewOqsWrapper(kemName)
+	} else if slices.Contains(oqs_wrapper.OqsEnabledKEMs, kemName) {
+		return oqs_wrapper.NewOqsWrapper(kemName)
 	} else {
 		panic("cryptofactory: no KEM found for name: " + kemName)
 	}

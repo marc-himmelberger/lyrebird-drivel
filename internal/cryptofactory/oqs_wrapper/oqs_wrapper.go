@@ -28,7 +28,7 @@
 // The oqs_wrapper.go file wraps the open-quantum-safe package [oqs]
 // to conform to the [kems.KeyEncapsulationMechanism] interface.
 
-package cryptofactory
+package oqs_wrapper
 
 import (
 	"github.com/open-quantum-safe/liboqs-go/oqs"
@@ -37,15 +37,13 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
 
-var oqsEnabledKEMs []string
+var OqsEnabledKEMs []string
 
 func init() {
 	supportedKEMs := oqs.SupportedKEMs()
 	log.Infof("OQS - supported KEMs: %s", supportedKEMs)
-	oqsEnabledKEMs = oqs.EnabledKEMs()
-	log.Infof("OQS - enabled KEMs:   %s", oqsEnabledKEMs)
-
-	allKemNames = append(allKemNames, oqsEnabledKEMs...)
+	OqsEnabledKEMs = oqs.EnabledKEMs()
+	log.Infof("OQS - enabled KEMs:   %s", OqsEnabledKEMs)
 }
 
 // Wraps an [oqs.KeyEncapsulation] to conform to [kems.KeyEncapsulationMechanism]

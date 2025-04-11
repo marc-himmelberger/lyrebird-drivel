@@ -35,21 +35,22 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
 
+// Mask selects 5 empty bits
+const mask byte = 0xf8
+
 // A padder for Classic-McEliece-6960119 that adds 5 extra random bits to every ciphertext in order to make it byte-aligned.
 // All other parameter sets for Classic McEliece are already byte-aligned.
 type ClassicMcEliecePadder struct{}
 
 func (encoder *ClassicMcEliecePadder) Init(kem kems.KeyEncapsulationMechanism) {
-	if !strings.HasPrefix(kem.Name(), "Classic-McEliece") {
-		panic("encoding_classic_mceliece: This encoder is only required for Classic McEliece KEMs. Not " + kem.Name())
-	}
 	if kem.Name() != "Classic-McEliece-6960119" {
-		panic("encoding_classic_mceliece: This encoder is only required for non-byte aligned parameter sets. This is only 6960119. " +
-			kem.Name() +
-			" can be used with the 'nil' encoder instead.")
-	}
-	if kem.LengthCiphertext() != 194 {
-		panic("encoding_classic_mceliece: Received invalid ciphertext size from KEM")
+		if strings.HasPrefix(kem.Name(), "Classic-McEliece") {
+			panic("encoding_classic_mceliece: This encoder is only required for non-byte aligned parameter sets. This is only 6960119. " +
+				kem.Name() +
+				" can be used with the 'nil' encoder instead.")
+		} else {
+			panic("encoding_classic_mceliece: This encoder is only required for Classic McEliece KEMs. Not " + kem.Name())
+		}
 	}
 }
 func (encoder *ClassicMcEliecePadder) LengthObfuscatedCiphertext() int {
@@ -62,27 +63,14 @@ func (encoder *ClassicMcEliecePadder) EncodeCiphertext(obfCiphertext []byte, kem
 		return false
 	}
 
-	// Mask selects 5 empty bits
-	var mask byte = 0xf8
 	copy(obfCiphertext, kemCiphertext)
-
-	if obfCiphertext[193]&mask != 0 {
-		panic("encoding_classic_mceliece: Non-zero padding found in KEM")
-	}
 	obfCiphertext[193] |= (mask & rand_byte[0])
-	if obfCiphertext[193]&mask != mask&rand_byte[0] {
-		panic("encoding_classic_mceliece: Padding did not work")
-	}
+
 	return true
 }
 func (encoder *ClassicMcEliecePadder) DecodeCiphertext(kemCiphertext []byte, obfCiphertext []byte) {
-	// Mask selects empty bits
-	var mask byte = 0xf8
 	copy(kemCiphertext, obfCiphertext)
 	kemCiphertext[193] &= (^mask)
-	if kemCiphertext[193]&mask != 0 {
-		panic("encoding_classic_mceliece: Unpadding did not work")
-	}
 }
 
 var _ encaps_encode.EncapsThenEncode = (*ClassicMcEliecePadder)(nil)
