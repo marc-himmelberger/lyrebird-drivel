@@ -33,9 +33,9 @@ import (
 )
 
 const (
-	q    int = 3329
-	n    int = 256
-	eta2 int = 2
+	q    uint16 = 3329
+	n    int    = 256
+	eta2 int    = 2
 )
 
 // An implementation of the ML-KEM obfuscator "Kemeleon" (Non-Rejection Sampling Variant).
@@ -107,22 +107,22 @@ func (encoder *KemeleonEncoder) splitCtxt(ctxt []byte) (c1 []byte, c2 []byte) {
 	return ctxt[:length_c1], ctxt[length_c1 : length_c1+length_c2]
 }
 
-// Executes ByteDecode from FIPS203 once on a d*32-byte string to get 256 d-bit integers
-func (encoder *KemeleonEncoder) byteDecodeSingle(d int, encoded []byte) (integers [256]int) {
+// Executes ByteDecode from FIPS203 once on a d*32-byte string to get n d-bit integers
+func (encoder *KemeleonEncoder) byteDecodeSingle(d int, encoded []byte) (integers [n]uint16) {
 	// Take d bits at a time, convert to int, add to array.
 	// These d-bit blocks may go across byte boundaries.
 
 	// start of the next d-bit block, measured in bits from the start of encoded
 	var bitOffset int = 0
 
-	for i := range 256 {
-		var value int = 0
+	for i := range n {
+		var value uint16 = 0
 		for bit := 0; bit < d; bit++ {
 			// Look for each bit separately
 			byteIndex := (bitOffset + bit) / 8
 			bitIndex := (bitOffset + bit) % 8
 			bitValue := (encoded[byteIndex] >> bitIndex) & 1
-			value |= int(bitValue) << bit
+			value |= uint16(bitValue) << bit
 		}
 		integers[i] = value
 		bitOffset += d
@@ -130,13 +130,35 @@ func (encoder *KemeleonEncoder) byteDecodeSingle(d int, encoded []byte) (integer
 	return
 }
 
+// Executes ByteEncode from FIPS203 once on a slice of n d-bit integers to  get a d*32-byte string
+func (encoder *KemeleonEncoder) byteEncodeSingle(d int, integers [n]uint16) (encoded []byte) {
+	// Take an integer, convert to d bits, add to buffer.
+	// These d-bit blocks may go across byte boundaries.
+	encoded = make([]byte, d*32)
+
+	// start of the next d-bit block, measured in bits from the start of encoded
+	var bitOffset int = 0
+
+	for i := 0; i < n; i++ {
+		value := integers[i]
+		for bit := 0; bit < d; bit++ {
+			byteIndex := (bitOffset + bit) / 8
+			bitIndex := (bitOffset + bit) % 8
+			bitValue := (value >> bit) & 1
+			encoded[byteIndex] |= byte(bitValue << bitIndex)
+		}
+		bitOffset += d
+	}
+	return
+}
+
 // Executes ByteDecode from FIPS203 twice to convert both parts of the ciphertext
-func (encoder *KemeleonEncoder) decodeBytes(c1 []byte, c2 []byte) (compressedU []int, compressedV []int) {
+func (encoder *KemeleonEncoder) decodeBytes(c1 []byte, c2 []byte) (compressedU []uint16, compressedV []uint16) {
 	// We execute ByteDecode: k times on c1 to get du-bit integers,
 	// and then once on c2 to get dv-bit integers.
 	// Each call to ByteDecode consumes block_size bytes for d=du
 	block_size := 32 * encoder.du
-	compressedU = make([]int, 0, 256*encoder.k)
+	compressedU = make([]uint16, 0, n*encoder.k)
 	for i := range encoder.k {
 		intArr := encoder.byteDecodeSingle(encoder.du, c1[i*block_size:(i+1)*block_size])
 		compressedU = append(compressedU, intArr[:]...)
@@ -144,6 +166,38 @@ func (encoder *KemeleonEncoder) decodeBytes(c1 []byte, c2 []byte) (compressedU [
 	intArr := encoder.byteDecodeSingle(encoder.dv, c2)
 	compressedV = intArr[:]
 	return
+}
+
+// Executes Decompress from FIPS203 repeatedly to convert both parts of the ciphertext.
+// This function mutates its arguments.
+func (encoder *KemeleonEncoder) decompress(compressedU []uint16, compressedV []uint16) {
+	// We execute Decompress: k times on compressedU to get k*n integers mod q,
+	// and then once on c2 to get n integers mod q.
+	// Each call to Decompress consumes n integers
+
+	// Calculates (y * q) / 2^d (no modular inverse!) and rounds to the neares integer
+	decompressU := func(y uint16) uint16 {
+		dividend := uint32(y) * uint32(q)
+		quotient := dividend >> encoder.du
+		// round up  if the last dropped bit was 1
+		quotient += dividend >> (encoder.du - 1) & 1
+		return uint16(quotient)
+	}
+	decompressV := func(y uint16) uint16 {
+		dividend := uint32(y) * uint32(q)
+		quotient := dividend >> encoder.dv
+		// round up  if the last dropped bit was 1
+		quotient += dividend >> (encoder.dv - 1) & 1
+		return uint16(quotient)
+	}
+
+	// Runs for k times as many iterations, but the operation is element-wise
+	for i, val := range compressedU {
+		compressedU[i] = decompressU(val)
+	}
+	for i, val := range compressedV {
+		compressedV[i] = decompressV(val)
+	}
 }
 
 // Corresponds to EncodeCtxt in the Internet Draft
