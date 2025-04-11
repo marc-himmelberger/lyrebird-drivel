@@ -71,6 +71,9 @@ var allEncodedKems = []string{
 	"Classic-McEliece-6688128",
 	"Classic-McEliece-6960119",
 	"Classic-McEliece-8192128",
+	"ML-KEM-512",
+	"ML-KEM-768",
+	"ML-KEM-1024",
 }
 
 /*
@@ -121,6 +124,8 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 			encoder = nil
 		case "Classic-McEliece-6960119":
 			encoder = &ClassicMcEliecePadder{}
+		case "ML-KEM-512", "ML-KEM-768", "ML-KEM-1024":
+			encoder = &KemeleonEncoder{}
 		//case "KEM1", "KEM2":
 		//	encoder = Kem1Encoder{}
 		default:

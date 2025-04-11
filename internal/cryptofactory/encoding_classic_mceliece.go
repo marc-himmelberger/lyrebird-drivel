@@ -25,18 +25,23 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-// This file defines a simple padder that fills Classic McEliece ciphertexts top the byte boundary with random bits
 package cryptofactory
 
 import (
+	"strings"
+
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
 
-// A padder for Classic-McEliece-6960119 that adds ??? extra random bits to every ciphertext in order to make it byte-aligned
+// A padder for Classic-McEliece-6960119 that adds 5 extra random bits to every ciphertext in order to make it byte-aligned.
+// All other parameter sets for Classic McEliece are already byte-aligned.
 type ClassicMcEliecePadder struct{}
 
 func (encoder *ClassicMcEliecePadder) Init(kem kems.KeyEncapsulationMechanism) {
+	if !strings.HasPrefix(kem.Name(), "Classic-McEliece") {
+		panic("encoding_classic_mceliece: This encoder is only required for Classic McEliece KEMs. Not " + kem.Name())
+	}
 	if kem.Name() != "Classic-McEliece-6960119" {
 		panic("encoding_classic_mceliece: This encoder is only required for non-byte aligned parameter sets. This is only 6960119. " +
 			kem.Name() +
