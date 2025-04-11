@@ -28,7 +28,7 @@
 // The encaps_encode.go file defines the encapsulate-then-encode
 // construction defined in https://eprint.iacr.org/2024/1086.
 
-package cryptofactory
+package encaps_encode
 
 import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/log"
@@ -52,6 +52,10 @@ type EncapsThenEncode interface {
 type EncapsThenEncodeOKEM struct {
 	kem     kems.KeyEncapsulationMechanism
 	encoder EncapsThenEncode
+}
+
+func NewEncapsThenEncodeOKEM(kem kems.KeyEncapsulationMechanism, encoder EncapsThenEncode) *EncapsThenEncodeOKEM {
+	return &EncapsThenEncodeOKEM{kem, encoder}
 }
 
 // Name of encaps-then-encapsulate construction only prefixes "EtE-"

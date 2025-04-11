@@ -25,7 +25,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-package cryptofactory
+package encoding_kemeleon
 
 import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
@@ -36,14 +36,18 @@ import (
 // See also https://eprint.iacr.org/2024/1086.pdf and https://datatracker.ietf.org/doc/draft-irtf-cfrg-kemeleon/
 // The implementation uses inspiration from https://github.com/jmwample/kemeleon and https://github.com/rozbb/ct-kemeleon
 type KemeleonEncoder struct {
-	t  int
-	q  int `default:"3329"`
-	n  int `default:"256"`
-	du int
-	dv int
+	// Parameters with defaults or set in Init
+	t int
+	q int `default:"3329"`
+	n int `default:"256"`
 
 	kemCtxtLength      int // Length in bytes of KEM ciphertexts
 	kemeleonCtxtLength int // Length in bytes of Kemeleon outputs
+
+	// Parameters from FIPS203
+	k  int
+	du int
+	dv int
 }
 
 // Verifies KEM and sets the parameter "t" according to the targeted security level

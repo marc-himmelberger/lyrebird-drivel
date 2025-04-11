@@ -25,12 +25,13 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-package cryptofactory
+package encoding_classic_mceliece
 
 import (
 	"strings"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encaps_encode"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
 
@@ -84,4 +85,4 @@ func (encoder *ClassicMcEliecePadder) DecodeCiphertext(kemCiphertext []byte, obf
 	}
 }
 
-var _ EncapsThenEncode = (*ClassicMcEliecePadder)(nil)
+var _ encaps_encode.EncapsThenEncode = (*ClassicMcEliecePadder)(nil)

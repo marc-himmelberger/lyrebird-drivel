@@ -32,6 +32,9 @@ import (
 	"slices"
 	"strings"
 
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encaps_encode"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encoding_classic_mceliece"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encoding_kemeleon"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/x25519ell2"
@@ -113,7 +116,7 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 		kem := NewKem(kemName)
 		// Select encoder
 		// TODO: cover more implementations from https://github.com/open-quantum-safe/liboqs/blob/main/src/kem/kem.h#L42
-		var encoder EncapsThenEncode
+		var encoder encaps_encode.EncapsThenEncode
 		switch kemName {
 		case "x25519":
 			encoder = &x25519ell2.Elligator2Encoder{}
@@ -123,9 +126,9 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 			"Classic-McEliece-8192128":
 			encoder = nil
 		case "Classic-McEliece-6960119":
-			encoder = &ClassicMcEliecePadder{}
+			encoder = &encoding_classic_mceliece.ClassicMcEliecePadder{}
 		case "ML-KEM-512", "ML-KEM-768", "ML-KEM-1024":
-			encoder = &KemeleonEncoder{}
+			encoder = &encoding_kemeleon.KemeleonEncoder{}
 		//case "KEM1", "KEM2":
 		//	encoder = Kem1Encoder{}
 		default:
@@ -135,7 +138,7 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 		if encoder != nil {
 			encoder.Init(kem)
 		}
-		return &EncapsThenEncodeOKEM{kem, encoder}
+		return encaps_encode.NewEncapsThenEncodeOKEM(kem, encoder)
 	} else if strings.HasPrefix(okemName, "OEINC[") && strings.HasSuffix(okemName, "]") {
 		panic("cryptofactory: OEINC not yet implemented")
 
