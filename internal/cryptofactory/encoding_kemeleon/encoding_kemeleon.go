@@ -107,6 +107,12 @@ func (encoder *KemeleonEncoder) splitCtxt(ctxt []byte) (c1 []byte, c2 []byte) {
 	return ctxt[:length_c1], ctxt[length_c1 : length_c1+length_c2]
 }
 
+// Concatenates two values c1, c2 into a ciphertext
+func (encoder *KemeleonEncoder) combineCtxt(c1 []byte, c2 []byte) (ctxt []byte) {
+	// trivial, but this way the interface is symmetric
+	return append(c1, c2...)
+}
+
 // Executes ByteDecode from FIPS203 once on a d*32-byte string to get n d-bit integers
 func (encoder *KemeleonEncoder) byteDecodeSingle(d int, encoded []byte) (integers [n]uint16) {
 	// Take d bits at a time, convert to int, add to array.
@@ -168,28 +174,46 @@ func (encoder *KemeleonEncoder) decodeBytes(c1 []byte, c2 []byte) (compressedU [
 	return
 }
 
+// Executes ByteEncode from FIPS203 twice to convert both parts of the ciphertext
+func (encoder *KemeleonEncoder) encodeBytes(compressedU []uint16, compressedV []uint16) (c1 []byte, c2 []byte) {
+	// We execute ByteEncode: k times on compressedU (du-bit integers),
+	// and then once on compressedV (dv-bit integers).
+	// Each call to ByteEncode consumes n integers and produces block_size bytes for d=du
+	block_size := 32 * encoder.du
+	c1 = make([]byte, 0, block_size*encoder.k)
+	for i := range encoder.k {
+		encBlock := encoder.byteEncodeSingle(encoder.du, [256]uint16(compressedU[i*256:(i+1)*256]))
+		c1 = append(c1, encBlock...)
+	}
+	c2 = encoder.byteEncodeSingle(encoder.dv, [256]uint16(compressedV))
+	return
+}
+
+// Calculates (y * q) / 2^d (arithmetic as rationals) and rounds to the nearest integer
+func decompressSingle(y uint16, d int) uint16 {
+	dividend := uint32(y) * uint32(q)
+	quotient := dividend >> d
+	// round up  if the last dropped bit was 1
+	quotient += dividend >> (d - 1) & 1
+	return uint16(quotient)
+}
+
+// Calculates (x * 2^d) / q (arithmetic as rationals) and rounds to the nearest integer, then mod 2^d
+// Tested against crypto/internal/fips140/mlkem/field.go
+func compressSingle(x uint16, d int) uint16 {
+	// If we add q/2 bevore dividing, rounding to nearest will work correctly
+	dividend := uint32(x)*(1<<d) + uint32(q)/2
+	return uint16(dividend/uint32(q)) % (1 << d)
+}
+
 // Executes Decompress from FIPS203 repeatedly to convert both parts of the ciphertext.
 // This function mutates its arguments.
 func (encoder *KemeleonEncoder) decompress(compressedU []uint16, compressedV []uint16) {
 	// We execute Decompress: k times on compressedU to get k*n integers mod q,
-	// and then once on c2 to get n integers mod q.
+	// and then once on compressedV to get n integers mod q.
 	// Each call to Decompress consumes n integers
-
-	// Calculates (y * q) / 2^d (no modular inverse!) and rounds to the neares integer
-	decompressU := func(y uint16) uint16 {
-		dividend := uint32(y) * uint32(q)
-		quotient := dividend >> encoder.du
-		// round up  if the last dropped bit was 1
-		quotient += dividend >> (encoder.du - 1) & 1
-		return uint16(quotient)
-	}
-	decompressV := func(y uint16) uint16 {
-		dividend := uint32(y) * uint32(q)
-		quotient := dividend >> encoder.dv
-		// round up  if the last dropped bit was 1
-		quotient += dividend >> (encoder.dv - 1) & 1
-		return uint16(quotient)
-	}
+	decompressU := func(y uint16) uint16 { return decompressSingle(y, encoder.du) }
+	decompressV := func(y uint16) uint16 { return decompressSingle(y, encoder.dv) }
 
 	// Runs for k times as many iterations, but the operation is element-wise
 	for i, val := range compressedU {
@@ -197,6 +221,24 @@ func (encoder *KemeleonEncoder) decompress(compressedU []uint16, compressedV []u
 	}
 	for i, val := range compressedV {
 		compressedV[i] = decompressV(val)
+	}
+}
+
+// Executes Compress from FIPS203 repeatedly to convert both parts of the ciphertext.
+// This function mutates its arguments.
+func (encoder *KemeleonEncoder) compress(u []uint16, v []uint16) {
+	// We execute Compress: k times on u to get k*n integers mod 2^du,
+	// and then once on v to get n integers mod 2^dv.
+	// Each call to Compress consumes n integers
+	compressU := func(x uint16) uint16 { return compressSingle(x, encoder.du) }
+	compressV := func(x uint16) uint16 { return compressSingle(x, encoder.dv) }
+
+	// Runs for k times as many iterations, but the operation is element-wise
+	for i, val := range u {
+		u[i] = compressU(val)
+	}
+	for i, val := range v {
+		v[i] = compressV(val)
 	}
 }
 
