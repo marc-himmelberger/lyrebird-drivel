@@ -28,6 +28,10 @@
 package encoding_kemeleon
 
 import (
+	"fmt"
+	"math/big"
+
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encaps_encode"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
@@ -180,7 +184,7 @@ func (encoder *KemeleonEncoder) encodeBytes(compressedU []uint16, compressedV []
 	// and then once on compressedV (dv-bit integers).
 	// Each call to ByteEncode consumes n integers and produces block_size bytes for d=du
 	block_size := 32 * encoder.du
-	c1 = make([]byte, 0, block_size*encoder.k)
+	c1 = make([]byte, 0, block_size*(encoder.k+1)) // extra space avoids copy for append (dv < du)
 	for i := range encoder.k {
 		encBlock := encoder.byteEncodeSingle(encoder.du, [256]uint16(compressedU[i*256:(i+1)*256]))
 		c1 = append(c1, encBlock...)
@@ -207,55 +211,137 @@ func compressSingle(x uint16, d int) uint16 {
 }
 
 // Executes Decompress from FIPS203 repeatedly to convert both parts of the ciphertext.
-// This function mutates its arguments.
-func (encoder *KemeleonEncoder) decompress(compressedU []uint16, compressedV []uint16) {
+func (encoder *KemeleonEncoder) decompress(compressedU []uint16, compressedV []uint16) (u []uint16, v []uint16) {
 	// We execute Decompress: k times on compressedU to get k*n integers mod q,
 	// and then once on compressedV to get n integers mod q.
-	// Each call to Decompress consumes n integers
-	decompressU := func(y uint16) uint16 { return decompressSingle(y, encoder.du) }
-	decompressV := func(y uint16) uint16 { return decompressSingle(y, encoder.dv) }
+	u = make([]uint16, n*encoder.k, n*(encoder.k+1)) // extra space avoids copy for append
+	v = make([]uint16, n)
 
 	// Runs for k times as many iterations, but the operation is element-wise
 	for i, val := range compressedU {
-		compressedU[i] = decompressU(val)
+		u[i] = decompressSingle(val, encoder.du)
 	}
 	for i, val := range compressedV {
-		compressedV[i] = decompressV(val)
+		v[i] = decompressSingle(val, encoder.dv)
 	}
+
+	return
 }
 
 // Executes Compress from FIPS203 repeatedly to convert both parts of the ciphertext.
-// This function mutates its arguments.
-func (encoder *KemeleonEncoder) compress(u []uint16, v []uint16) {
+func (encoder *KemeleonEncoder) compress(u []uint16, v []uint16) (compressedU []uint16, compressedV []uint16) {
 	// We execute Compress: k times on u to get k*n integers mod 2^du,
 	// and then once on v to get n integers mod 2^dv.
-	// Each call to Compress consumes n integers
-	compressU := func(x uint16) uint16 { return compressSingle(x, encoder.du) }
-	compressV := func(x uint16) uint16 { return compressSingle(x, encoder.dv) }
+	compressedU = make([]uint16, n*encoder.k)
+	compressedV = make([]uint16, n)
 
 	// Runs for k times as many iterations, but the operation is element-wise
 	for i, val := range u {
-		u[i] = compressU(val)
+		compressedU[i] = compressSingle(val, encoder.du)
 	}
 	for i, val := range v {
-		v[i] = compressV(val)
+		compressedV[i] = compressSingle(val, encoder.dv)
 	}
+
+	return
 }
 
-// Corresponds to EncodeCtxt in the Internet Draft
+// Executes SamplePreimage from the Internet Draft once.
+// Given d and a pair of decompressed and compressed values,
+// this returns a suitable preimage in Z_q to avoid rejections later.
+func samplePreimage(d int, u, c uint16) uint16 {
+	var rand_min, rand_max int
+	switch d {
+	case 10:
+		if compressSingle(u+2, d) == c {
+			rand_min, rand_max = -1, 2
+		} else {
+			rand_min, rand_max = -1, 1
+		}
+	case 11:
+		if compressSingle(u+1, d) == c {
+			rand_min, rand_max = 0, 1
+		} else {
+			rand_min, rand_max = -1, 0
+		}
+	case 5:
+		if c == 0 {
+			rand_min, rand_max = -52, 52
+		} else {
+			rand_min, rand_max = -51, 52
+		}
+	case 4:
+		if c == 0 {
+			rand_min, rand_max = -104, 104
+		} else {
+			rand_min, rand_max = -104, 103
+		}
+	default:
+		panic(fmt.Sprintf("encoding_kemeleon: Unsupported value d=%d", d))
+	}
+	return u + uint16(csrand.IntRange(rand_min, rand_max))
+}
+
+// Executes VectorEncodeNR from the Internet Draft once.
+// Given a vector of (k+1)*n elements of Z_q, accumulates into a large integer.
+func (encoder *KemeleonEncoder) vectorEncodeNR(w []uint16) *big.Int {
+	r := big.NewInt(0)
+	// TODO use k+1 instead of k when accumulating
+	return r
+}
+
+// Executes VectorDecodeNR from the Internet Draft once.
+// Given a large integer, returns a vector of (k+1)*n elements of Z_q.
+func (encoder *KemeleonEncoder) vectorDecodeNR(r *big.Int) []uint16 {
+	w := make([]uint16, 0, n*(encoder.k+1))
+	// TODO use k+1 instead of k when extracting
+	return w
+}
+
+// Corresponds to Kemeleon.EncodeCtxtNR in the Internet Draft
 func (encoder *KemeleonEncoder) EncodeCiphertext(obfCiphertext []byte, kemCiphertext []byte) (ok bool) {
 	// TODO Consult https://github.com/C2SP/CCTV/blob/main/ML-KEM/intermediate/ML-KEM-1024.txt for debugging
 
-	copy(obfCiphertext, kemCiphertext)
+	c1, c2 := encoder.splitCtxt(kemCiphertext)
+	comprU, comprV := encoder.decodeBytes(c1, c2)
+	u, v := encoder.decompress(comprU, comprV)
 
-	// TODO implement
+	// Sample preimages, range for u runs for k times as many iterations,
+	// but the operation is element-wise
+	for i, val := range u {
+		u[i] = samplePreimage(encoder.du, comprU[i], val)
+	}
+	for i, val := range v {
+		v[i] = samplePreimage(encoder.dv, comprV[i], val)
+	}
+
+	// Concatenate vector and encode
+	w := append(u, v...)
+	r := encoder.vectorEncodeNR(w)
+
+	// Serialize big.Int to obfCiphertext
+	r.FillBytes(obfCiphertext)
+
 	return true
 }
 
-// Corresponds to DecodeCtxt in the Internet Draft
+// Corresponds to Kemeleon.DecodeCtxtNR in the Internet Draft
 func (encoder *KemeleonEncoder) DecodeCiphertext(kemCiphertext []byte, obfCiphertext []byte) {
-	// TODO implement
-	copy(kemCiphertext, obfCiphertext)
+	// Deserialize big.Int from obfCiphertext
+	r := big.NewInt(0)
+	r.SetBytes(obfCiphertext)
+
+	// Decode and split vector
+	w := encoder.vectorDecodeNR(r)
+	u, v := w[:n*encoder.k], w[n*encoder.k:n*(encoder.k+1)]
+
+	// Compress
+	comprU, comprV := encoder.compress(u, v)
+	c1, c2 := encoder.encodeBytes(comprU, comprV)
+	ctxt := encoder.combineCtxt(c1, c2)
+
+	// Save result
+	copy(kemCiphertext, ctxt)
 }
 
 var _ encaps_encode.EncapsThenEncode = (*KemeleonEncoder)(nil)

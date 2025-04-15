@@ -246,17 +246,17 @@ func testWithTestVectors(t *testing.T,
 	}
 
 	// decodeBytes
-	u, v := encoder.decodeBytes(c1, c2)
+	comprU, comprV := encoder.decodeBytes(c1, c2)
 	// test vector only considers first 256 integers for compress(u)
-	if !slices.Equal(comprU0Known, u[:256]) {
-		t.Fatalf("test vector on compress(u): expected %v, actual: %v", comprU0Known, u[:256])
+	if !slices.Equal(comprU0Known, comprU[:256]) {
+		t.Fatalf("test vector on compress(u): expected %v, actual: %v", comprU0Known, comprU[:256])
 	}
-	if !slices.Equal(comprVKnown, v) {
-		t.Fatalf("test vector on compress(v): expected %v, actual: %v", comprVKnown, v)
+	if !slices.Equal(comprVKnown, comprV) {
+		t.Fatalf("test vector on compress(v): expected %v, actual: %v", comprVKnown, comprV)
 	}
 
 	// decompress
-	encoder.decompress(u, v)
+	u, v := encoder.decompress(comprU, comprV)
 	// hex string in test vectors uses full 12-bit representation
 	uSerialized := make([]byte, 0, len(u)*2)
 	for i := range encoder.k {
@@ -277,16 +277,16 @@ func testWithTestVectors(t *testing.T,
 	// this time we should get back exactly the same ciphertext/intermediates, as compress(decompress(x)) = x always.
 
 	// compress
-	encoder.compress(u, v)
-	if !slices.Equal(comprU0Known, u[:256]) {
-		t.Fatalf("test vector on compress(u^d): expected %v, actual: %v", comprU0Known, u[:256])
+	comprU, comprV = encoder.compress(u, v)
+	if !slices.Equal(comprU0Known, comprU[:256]) {
+		t.Fatalf("test vector on compress(u^d): expected %v, actual: %v", comprU0Known, comprU[:256])
 	}
-	if !slices.Equal(comprVKnown, v) {
-		t.Fatalf("test vector on compress(v^d): expected %v, actual: %v", comprVKnown, v)
+	if !slices.Equal(comprVKnown, comprV) {
+		t.Fatalf("test vector on compress(v^d): expected %v, actual: %v", comprVKnown, comprV)
 	}
 
 	// encodeBytes
-	c1, c2 = encoder.encodeBytes(u, v)
+	c1, c2 = encoder.encodeBytes(comprU, comprV)
 	if !bytes.Equal(c1Known, c1) {
 		t.Fatalf("test vector on c1': expected %x, actual: %x", c1Known, c1)
 	}
