@@ -28,7 +28,9 @@
 package encoding_kemeleon
 
 import (
+	"crypto/rand"
 	"fmt"
+	"math"
 	"math/big"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
@@ -75,7 +77,7 @@ func (encoder *KemeleonEncoder) Init(kem kems.KeyEncapsulationMechanism) {
 	case "ML-KEM-768":
 		encoder.t = 192
 		encoder.kemCtxtLength = 1088
-		encoder.kemeleonCtxtLength = 1514
+		encoder.kemeleonCtxtLength = 1514 + 8 // XXX: unclear in I-D: if t corresponds to NIST, then sizes are bigger (draft uses t=128 always in Table 2)
 		encoder.k = 3
 		encoder.eta1 = 2
 		encoder.du = 10
@@ -83,7 +85,7 @@ func (encoder *KemeleonEncoder) Init(kem kems.KeyEncapsulationMechanism) {
 	case "ML-KEM-1024":
 		encoder.t = 256
 		encoder.kemCtxtLength = 1568
-		encoder.kemeleonCtxtLength = 1889 // XXX: Are these Kemeleon numbers up-to-date with NR,I-D?
+		encoder.kemeleonCtxtLength = 1905 // XXX: similar
 		encoder.k = 4
 		encoder.eta1 = 2
 		encoder.du = 11
@@ -250,6 +252,7 @@ func (encoder *KemeleonEncoder) compress(u []uint16, v []uint16) (compressedU []
 // Given d and a pair of decompressed and compressed values,
 // this returns a suitable preimage in Z_q to avoid rejections later.
 func samplePreimage(d int, u, c uint16) uint16 {
+	// range for the sampling of rand, inclusive
 	var rand_min, rand_max int
 	switch d {
 	case 10:
@@ -261,8 +264,10 @@ func samplePreimage(d int, u, c uint16) uint16 {
 	case 11:
 		if compressSingle(u+1, d) == c {
 			rand_min, rand_max = 0, 1
-		} else {
+		} else if compressSingle(u-1, d) == c {
 			rand_min, rand_max = -1, 0
+		} else {
+			rand_min, rand_max = 0, 0
 		}
 	case 5:
 		if c == 0 {
@@ -279,22 +284,69 @@ func samplePreimage(d int, u, c uint16) uint16 {
 	default:
 		panic(fmt.Sprintf("encoding_kemeleon: Unsupported value d=%d", d))
 	}
-	return u + uint16(csrand.IntRange(rand_min, rand_max))
+	rand := csrand.IntRange(rand_min, rand_max)
+	if rand < 0 {
+		rand = int(q) - rand
+	}
+	return (u + uint16(rand)) % q
 }
 
 // Executes VectorEncodeNR from the Internet Draft once.
 // Given a vector of (k+1)*n elements of Z_q, accumulates into a large integer.
 func (encoder *KemeleonEncoder) vectorEncodeNR(w []uint16) *big.Int {
 	r := big.NewInt(0)
-	// TODO use k+1 instead of k when accumulating
+	qBig := big.NewInt(int64(q))
+	z := big.NewInt(0)
+	v := big.NewInt(0)
+
+	l := len(w)                                             // (k+1)*n
+	b := int(math.Ceil(float64(l) * math.Log2(float64(q)))) // log2(q^l) = l * log2(q)
+	// XXX should be ceil(l*log2(q)) in draft?
+	for i, val := range w {
+		z.SetInt64(int64(i))   //
+		z.Exp(qBig, z, nil)    // z = q^i
+		v.SetInt64(int64(val)) //
+		z.Mul(v, z)            // z = val * q^i
+		r.Add(r, z)            // r += val * q^i
+	}
+
+	z.SetInt64(int64(b + encoder.t)) // z = b+t
+	v.SetInt64(2)                    //
+	v.Exp(v, z, nil)                 // v = 2^(b+t)
+	v.Sub(v, r)                      // v = 2^(b+t)-r
+	z.SetInt64(int64(l))             // z = (k+1)*n
+	qBig.Exp(qBig, z, nil)           // qBig = q^((k+1)*n)
+	v.Div(v, qBig)                   // v = floor((2^(b+t)-r)/(q^((k+1)*n)))
+	v.Add(v, z.SetInt64(1))          // v++
+
+	m, err := rand.Int(csrand.Rand, v) // m <--$ [0, v)
+	if err != nil {
+		panic(fmt.Sprintf("encoding_kemeleon: Unable to sample random Int: %s", err.Error()))
+	}
+
+	z.Mul(m, qBig) // z = m*q^((k+1)*n))
+	r.Add(r, z)    // r += m*q^((k+1)*n))
+
 	return r
 }
 
 // Executes VectorDecodeNR from the Internet Draft once.
 // Given a large integer, returns a vector of (k+1)*n elements of Z_q.
 func (encoder *KemeleonEncoder) vectorDecodeNR(r *big.Int) []uint16 {
-	w := make([]uint16, 0, n*(encoder.k+1))
-	// TODO use k+1 instead of k when extracting
+	l := n * (encoder.k + 1)
+	w := make([]uint16, l)
+
+	qBig := big.NewInt(int64(q))
+	z := big.NewInt(int64(l))
+	//v := big.NewInt(0)
+	z.Exp(qBig, z, nil) // z = q^((k+1)*n))
+	r.Mod(r, z)         // r = r % q^((k+1)*n))
+	// XXX typo in I-D, should be r instead of a
+	for i := range w {
+		z.Mod(r, qBig) // z = r % q
+		w[i] = uint16(z.Int64())
+		r.Div(r, qBig) // r = r // q
+	}
 	return w
 }
 
@@ -309,10 +361,10 @@ func (encoder *KemeleonEncoder) EncodeCiphertext(obfCiphertext []byte, kemCipher
 	// Sample preimages, range for u runs for k times as many iterations,
 	// but the operation is element-wise
 	for i, val := range u {
-		u[i] = samplePreimage(encoder.du, comprU[i], val)
+		u[i] = samplePreimage(encoder.du, val, comprU[i])
 	}
 	for i, val := range v {
-		v[i] = samplePreimage(encoder.dv, comprV[i], val)
+		v[i] = samplePreimage(encoder.dv, val, comprV[i])
 	}
 
 	// Concatenate vector and encode
