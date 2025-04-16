@@ -258,6 +258,8 @@ func samplePreimage(d int, u, c uint16) uint16 {
 	case 10:
 		if compressSingle(u+2, d) == c {
 			rand_min, rand_max = -1, 2
+		} else if compressSingle(u-2, d) == c {
+			rand_min, rand_max = -2, 1
 		} else {
 			rand_min, rand_max = -1, 1
 		}
@@ -270,23 +272,30 @@ func samplePreimage(d int, u, c uint16) uint16 {
 			rand_min, rand_max = 0, 0
 		}
 	case 5:
-		if c == 0 {
+		if u == 0 {
 			rand_min, rand_max = -52, 52
-		} else {
+		} else if u <= 1560 {
 			rand_min, rand_max = -51, 52
+		} else {
+			rand_min, rand_max = -52, 51
 		}
 	case 4:
-		if c == 0 {
+		if u == 0 {
 			rand_min, rand_max = -104, 104
+		} else if u == 2289 {
+			rand_min, rand_max = -104, 102
+		} else if u <= 1456 {
+			rand_min, rand_max = -103, 104
 		} else {
 			rand_min, rand_max = -104, 103
 		}
 	default:
 		panic(fmt.Sprintf("encoding_kemeleon: Unsupported value d=%d", d))
 	}
+	// IntRange samples inclusively
 	rand := csrand.IntRange(rand_min, rand_max)
 	if rand < 0 {
-		rand = int(q) - rand
+		rand = int(q) + rand
 	}
 	return (u + uint16(rand)) % q
 }
