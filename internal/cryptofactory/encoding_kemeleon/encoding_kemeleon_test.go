@@ -32,6 +32,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"slices"
 	"strings"
@@ -403,6 +404,9 @@ func TestVectorEncode(t *testing.T) {
 	}
 }
 
+// Checks that SamplePreimage returns correct results over numRepeatsPreimg samples per value in Z_q.
+// Also logs the statistical distance to an expected uniform distribution of the preimages.
+// This distance approaches 0 over time, the rate should be consistent with [TestUnifDistance].
 func TestSamplePreimage(t *testing.T) {
 	// test various values of d
 	for _, d := range []int{4, 5, 10, 11} {
@@ -413,15 +417,24 @@ func TestSamplePreimage(t *testing.T) {
 }
 
 func testSamplePreimage(t *testing.T, d int) {
+	// collects number of times each preimage in Z_q is seen
+	var preimFrequencies = map[uint16]int{}
+	var expectedPreimDistribution = map[uint16]float64{}
 	for y := range q {
+		preimFrequencies[y] = 0
+		expectedPreimDistribution[y] = 1 / float64(q)
+	}
+
+	for x := range q {
 		// TODO change this test and SamplePreimage to work off of compressed values and include decompression
-		comprX := compressSingle(y, d)
-		x := decompressSingle(comprX, d) // only these values can actually show up after decompression
+		comprX := compressSingle(x, d)
+		// only these values can actually show up after decompression
 
 		// repeat for randomness in samplePreimage
 		for range numRepeatsPreimg {
 			// SamplePreimage
-			preim := samplePreimage(d, x, comprX)
+			preim := samplePreimage(d, comprX)
+			preimFrequencies[preim]++
 
 			// check that preim compresses to the same as uncompressed
 			comprPreim := compressSingle(preim, d)
@@ -430,6 +443,66 @@ func testSamplePreimage(t *testing.T, d int) {
 				t.Fatalf("samplePreimage not correct: d=%d, x=%d, preim=%d, comprX=%d, comprPreim=%d", d, x, preim, comprX, comprPreim)
 			}
 		}
+	}
+
+	var preimDistribution = map[uint16]float64{}
+	samples := numRepeatsPreimg * int(q)
+	for y := range q {
+		preimDistribution[y] = float64(preimFrequencies[y]) / float64(samples)
+	}
+
+	checkIsDistribution(expectedPreimDistribution)
+	checkIsDistribution(preimDistribution)
+
+	var statDist float64 = 0
+	for y := range q {
+		statDist += math.Abs(preimDistribution[y] - expectedPreimDistribution[y])
+	}
+	statDist /= 2
+	t.Logf("statistical distance is %f%%", statDist*100)
+}
+
+// Simple test that cannot fail. Logs the statistical distance achieved by a uniform distribution for numRepeatsPreimg.
+// Can be used to compare the log output of TestSamplePreimage.
+func TestUnifDistance(t *testing.T) {
+	var expectedPreimDistribution = map[uint16]float64{}
+	for y := range q {
+		expectedPreimDistribution[y] = 1 / float64(q)
+	}
+
+	var unifDistribution = map[uint16]float64{}
+	samples := numRepeatsPreimg * int(q)
+	for range samples {
+		zq := csrand.IntRange(0, int(q)-1)
+		unifDistribution[uint16(zq)] += 1 / float64(samples)
+	}
+
+	checkIsDistribution(unifDistribution)
+
+	var statDist float64 = 0
+	for y := range q {
+		statDist += math.Abs(unifDistribution[y] - expectedPreimDistribution[y])
+	}
+	statDist /= 2
+	t.Logf("unif-statistical distance is %f%%", statDist*100)
+}
+
+// Verifies that the argument reflects a probability distribution, otherwise panics
+func checkIsDistribution(distribution map[uint16]float64) {
+	var sum float64 = 0
+	for _, prob := range distribution {
+		sum += prob
+
+		if prob < 0 {
+			panic(fmt.Sprintf("probability of %f is negative", prob))
+		}
+		if prob > 1 {
+			panic(fmt.Sprintf("probability of %f is greater than 1.0", prob))
+		}
+	}
+
+	if math.Abs(sum-1) > 1e-12 {
+		panic(fmt.Sprintf("distribution does not sum to 1.0, but %f", sum))
 	}
 }
 

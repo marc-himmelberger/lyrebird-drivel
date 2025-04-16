@@ -213,6 +213,7 @@ func compressSingle(x uint16, d int) uint16 {
 }
 
 // Executes Decompress from FIPS203 repeatedly to convert both parts of the ciphertext.
+// This function is not employed in Kemeleon, but this is verified against ML-KEM test vectors.
 func (encoder *KemeleonEncoder) decompress(compressedU []uint16, compressedV []uint16) (u []uint16, v []uint16) {
 	// We execute Decompress: k times on compressedU to get k*n integers mod q,
 	// and then once on compressedV to get n integers mod q.
@@ -225,6 +226,25 @@ func (encoder *KemeleonEncoder) decompress(compressedU []uint16, compressedV []u
 	}
 	for i, val := range compressedV {
 		v[i] = decompressSingle(val, encoder.dv)
+	}
+
+	return
+}
+
+// Adaptation of [decompress] that also incorporates the SamplePreimage function from the Internet Draft.
+// The results are randomly distributed u,v vectors that compress to compressedU,compressedV.
+func (encoder *KemeleonEncoder) decompressRandomized(compressedU []uint16, compressedV []uint16) (u []uint16, v []uint16) {
+	// We execute Decompress: k times on compressedU to get k*n integers mod q,
+	// and then once on compressedV to get n integers mod q.
+	u = make([]uint16, n*encoder.k, n*(encoder.k+1)) // extra space avoids copy for append
+	v = make([]uint16, n)
+
+	// Runs for k times as many iterations, but the operation is element-wise
+	for i, val := range compressedU {
+		u[i] = samplePreimage(encoder.du, val)
+	}
+	for i, val := range compressedV {
+		v[i] = samplePreimage(encoder.dv, val)
 	}
 
 	return
@@ -248,10 +268,11 @@ func (encoder *KemeleonEncoder) compress(u []uint16, v []uint16) (compressedU []
 	return
 }
 
-// Executes SamplePreimage from the Internet Draft once.
-// Given d and a pair of decompressed and compressed values,
-// this returns a suitable preimage in Z_q to avoid rejections later.
-func samplePreimage(d int, u, c uint16) uint16 {
+// Executes SamplePreimage from the Internet Draft once after applying [decompressSingle] to c.
+// Given d and a compressed value c, this returns a uniformly random preimage from Z_q.
+func samplePreimage(d int, c uint16) uint16 {
+	u := decompressSingle(c, d)
+
 	// range for the sampling of rand, inclusive
 	var rand_min, rand_max int
 	switch d {
@@ -282,8 +303,6 @@ func samplePreimage(d int, u, c uint16) uint16 {
 	case 4:
 		if u == 0 {
 			rand_min, rand_max = -104, 104
-		} else if u == 2289 {
-			rand_min, rand_max = -104, 102
 		} else if u <= 1456 {
 			rand_min, rand_max = -103, 104
 		} else {
@@ -361,20 +380,10 @@ func (encoder *KemeleonEncoder) vectorDecodeNR(r *big.Int) []uint16 {
 
 // Corresponds to Kemeleon.EncodeCtxtNR in the Internet Draft
 func (encoder *KemeleonEncoder) EncodeCiphertext(obfCiphertext []byte, kemCiphertext []byte) (ok bool) {
-	// TODO Consult https://github.com/C2SP/CCTV/blob/main/ML-KEM/intermediate/ML-KEM-1024.txt for debugging
-
 	c1, c2 := encoder.splitCtxt(kemCiphertext)
 	comprU, comprV := encoder.decodeBytes(c1, c2)
-	u, v := encoder.decompress(comprU, comprV)
-
-	// Sample preimages, range for u runs for k times as many iterations,
-	// but the operation is element-wise
-	for i, val := range u {
-		u[i] = samplePreimage(encoder.du, val, comprU[i])
-	}
-	for i, val := range v {
-		v[i] = samplePreimage(encoder.dv, val, comprV[i])
-	}
+	// Decompress and do SamplePreimage
+	u, v := encoder.decompressRandomized(comprU, comprV)
 
 	// Concatenate vector and encode
 	w := append(u, v...)
