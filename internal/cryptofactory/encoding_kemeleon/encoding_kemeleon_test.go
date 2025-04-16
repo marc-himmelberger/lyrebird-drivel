@@ -49,8 +49,7 @@ var parameterSets = []string{
 	"ML-KEM-1024",
 }
 
-const minSuccessRate = float32(1.0)            // encoding should never reject
-const minLooksOkRate = float32(0.96875 - 0.05) // 2^-5 probability of all padding bits being 0 and some margin
+const minSuccessRate = float32(1.0) // encoding should never reject
 
 // Number of times to repeat correctness tests for applicable KEMs.
 var numRepeats int
@@ -75,32 +74,23 @@ func TestEncoding(t *testing.T) {
 	for _, kemName := range parameterSets {
 		t.Run(kemName, func(t *testing.T) {
 			encodingOkNum := 0
-			looksOkNum := 0
 			for range numRepeats {
-				encodingOk, looksOk := testSingleKemEncoding(t, kemName)
+				encodingOk := testSingleKemEncoding(t, kemName)
 				if encodingOk {
 					encodingOkNum++
-					if looksOk {
-						looksOkNum++
-					}
 				}
 			}
 
 			successRate := float32(encodingOkNum) / float32(numRepeats)
-			looksOkRate := float32(looksOkNum) / float32(encodingOkNum)
 			if successRate < minSuccessRate {
 				t.Fatalf("Success Rate of %f too low. Minimum: %f", successRate, minSuccessRate)
 			}
 			t.Logf("Success Rate of %f acceptable. Minimum: %f", successRate, minSuccessRate)
-			if looksOkRate < minLooksOkRate {
-				t.Fatalf("Looks-OK Rate of %f too low. Minimum: %f", looksOkRate, minLooksOkRate)
-			}
-			t.Logf("Looks-OK Rate of %f acceptable. Minimum: %f", looksOkRate, minLooksOkRate)
 		})
 	}
 }
 
-func testSingleKemEncoding(t *testing.T, kemName string) (ok bool, looksOk bool) {
+func testSingleKemEncoding(t *testing.T, kemName string) (ok bool) {
 	kem := (kems.KeyEncapsulationMechanism)(oqs_wrapper.NewOqsWrapper(kemName))
 	encoder := &KemeleonEncoder{}
 
@@ -122,9 +112,6 @@ func testSingleKemEncoding(t *testing.T, kemName string) (ok bool, looksOk bool)
 		t.Log("encoder.EncodeCiphertext(ctxt) failed")
 		return
 	}
-
-	// Specific to Kemeleon: Check layout of encodedCtxt
-	looksOk = true
 
 	// DecodeCtxt
 	decodedCtxt := make([]byte, kem.LengthCiphertext())
