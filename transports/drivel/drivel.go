@@ -167,11 +167,11 @@ func (cf *drivelClientFactory) Transport() base.Transport {
 	return cf.transport
 }
 
+// Uses generic Pluggable Transport arguments and constructs a [drivelClientArgs] for use in [Dial].
+// Requires the keys "node-id" and "iat-mode". Errors will be returned for invalid values.
 func (cf *drivelClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 	var nodeID *drivelcrypto.NodeID
 	var publicKey okems.PublicKey
-
-	// INFO this receives B, NodeID!
 
 	// Unlike obfs4, Drivel uses only a single "node-id" argument in the SOCKS proxy.
 	// This is due to the exceedingly large public keys that do not fit within a 510B limit.
@@ -210,10 +210,9 @@ func (cf *drivelClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 	return &drivelClientArgs{okemScheme, kemScheme, nodeID, publicKey, iatMode}, nil
 }
 
+// Should be used as a Dial function to initiate a Pluggable Transport session.
+// Receives arguments for Drivel and requires args to be an output of [ParseArgs].
 func (cf *drivelClientFactory) Dial(network, addr string, dialFn base.DialFunc, args interface{}) (net.Conn, error) {
-
-	// INFO args are passed back into Dial here! dialFn is direct or uses some regular Proxy server
-
 	// Validate args before bothering to open connection.
 	ca, ok := args.(*drivelClientArgs)
 	if !ok {
@@ -298,9 +297,9 @@ type drivelConn struct {
 	decoder *framing.Decoder
 }
 
+// This sets up a message length distribution, executes [clientHandshake] and implements a timeout.
+// Errors are forwarded from [clientHandshake].
 func newDrivelClientConn(conn net.Conn, args *drivelClientArgs) (c *drivelConn, err error) {
-	// INFO this sets up a message length distribution!
-
 	// Generate the initial protocol polymorphism distribution(s).
 	var seed *drbg.Seed
 	if seed, err = drbg.NewSeed(); err != nil {
@@ -338,12 +337,13 @@ func newDrivelClientConn(conn net.Conn, args *drivelClientArgs) (c *drivelConn, 
 	return
 }
 
+// Initiates a handshake with the server and waits for a response.
+// This function will return detailed errors if parsing fails.
+// Upon success, it returns no error and modifies conn such that future messages are obfuscated and encrypted.
 func (conn *drivelConn) clientHandshake(args *drivelClientArgs) error {
 	if conn.isServer {
 		return fmt.Errorf("clientHandshake called on server connection")
 	}
-
-	// INFO this sends the first client message!
 	log.Infof("This client has started a handshake")
 
 	// Generate a new keypair
@@ -389,11 +389,14 @@ func (conn *drivelConn) clientHandshake(args *drivelClientArgs) error {
 	}
 }
 
+// Initiates a handshake session with a client, reading its message from conn and sending a response.
+// This function will return detailed errors if parsing fails.
+// Upon success, it returns no error and modifies conn such that future messages are obfuscated and encrypted.
+// Additionally, an inlineSeedFrame is sent over the wrapped connection before this returns.
 func (conn *drivelConn) serverHandshake(sf *drivelServerFactory) error {
 	if !conn.isServer {
 		return fmt.Errorf("serverHandshake called on client connection")
 	}
-
 	log.Infof("This server has received a first handshake message")
 
 	// Generate the server handshake, and arm the base timeout.

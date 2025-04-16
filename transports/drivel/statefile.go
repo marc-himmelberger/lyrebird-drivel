@@ -200,7 +200,6 @@ func publicKeyStrFromFile(stateDir string, nodeID *drivelcrypto.NodeID) (string,
 
 func newJSONServerState(stateDir string, js *jsonServerState, okem okems.ObfuscatedKem) (err error) {
 	// Generate everything a server needs, using the cryptographic PRNG.
-	// INFO this generates the initial identity!
 	var st drivelServerState
 	rawID := make([]byte, drivelcrypto.NodeIDLength)
 	if err = csrand.Bytes(rawID); err != nil {

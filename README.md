@@ -57,14 +57,20 @@ To build:
 make build
 ```
 
-To install, copy `./lyrebird` to a permanent location
-(Eg: `/usr/local/bin`)
-TODO possibly also requires runtime dependencies?
+To install, copy `./lyrebird` to a permanent location (e.g. `/usr/local/bin`).
+The binary is dynamically linked and requires these common libraries to be present:
+```plain
+libresolv.so.2
+libpthread.so.0
+libc.so.6
+ld-linux-x86-64.so.2
+```
 
 Client side torrc configuration:
 
 ```plain
 ClientTransportPlugin obfs4 exec /usr/local/bin/lyrebird
+ClientTransportPlugin drivel exec /usr/local/bin/lyrebird
 ```
 
 Bridge side torrc configuration:
@@ -78,6 +84,7 @@ ExtORPort auto
 
 # Use lyrebird to provide the obfs4 protocol.
 ServerTransportPlugin obfs4 exec /usr/local/bin/lyrebird
+ServerTransportPlugin drivel exec /usr/local/bin/lyrebird
 
 # (Optional) Listen on the specified address/port for obfs4 connections as
 # opposed to picking a port automatically.

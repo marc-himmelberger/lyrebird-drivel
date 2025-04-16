@@ -189,6 +189,8 @@ func newClientHandshake(
 	return hs
 }
 
+// Uses the state saved in hs to generate a raw message,
+// suitable for sending over the network to initiate a handshake.
 func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 	log.Infof("clientHandshake.generateHandshake()")
 	var err error
@@ -259,7 +261,6 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 // Upon success, it returns the number of bytes read and the KEY_SEED.
 // Trailing bytes may contain another message, such as an inlineSeedFrame.
 func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error) {
-	// INFO this verifies the final server message!
 	log.Infof("clientHandshake.parseServerHandshake(%d B)", len(resp))
 	// Copy for brevity
 	ectLength := hs.lengthDetails.ectLength
@@ -379,10 +380,9 @@ func newServerHandshake(
 
 // Takes a raw message, received over the network and attempts to parse it as a client handshake message.
 // This function will return detailed errors if parsing fails.
-// Upon success, it returns the KEY_SEED.
+// Upon success, it returns the KEY_SEED and updates the state in hs.
 // The message is fully consumed.
 func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilter, resp []byte) ([]byte, error) {
-	// INFO this receives a client message and parses it!
 	log.Infof("serverHandshake.parseClientHandshake(%d B)", len(resp))
 	// Copy for brevity
 	epkLength := hs.lengthDetails.epkLength
@@ -495,8 +495,8 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 	return seed.Bytes()[:], nil
 }
 
+// Uses the state saved in hs to generate a raw message, suitable for sending over the network in response.
 func (hs *serverHandshake) generateHandshake() ([]byte, error) {
-	// INFO this uses a parsed client message to send a response!
 	log.Infof("serverHandshake.generateHandshake()")
 	var err error
 	var serverMark []byte // M_S

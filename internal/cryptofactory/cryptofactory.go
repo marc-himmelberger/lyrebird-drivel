@@ -109,7 +109,9 @@ Constructs an OKEM scheme given a name.
 Legal values for names are:
   - "EtE-<kem_name>" if "<kem_name>" is a valid name for
     [kems.NewKem], and a corresponding [EncapsThenEncode] is implemented.
-  - TODO Optional - "OEINC[<okem1>,<okem2>]" if "<okem1>" and "<okem2>" are both
+
+Possible names for future additions:
+  - "OEINC[<okem1>,<okem2>]" if "<okem1>" and "<okem2>" are both
     valid names for [okems.NewOkem]
 */
 func NewOkem(okemName string) okems.ObfuscatedKem {
@@ -122,7 +124,6 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 		}
 		kem := NewKem(kemName)
 		// Select encoder
-		// TODO: cover more implementations from https://github.com/open-quantum-safe/liboqs/blob/main/src/kem/kem.h#L42
 		var encoder encaps_encode.EncapsThenEncode
 		switch kemName {
 		case "x25519":
@@ -136,8 +137,6 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 			encoder = &encoding_classic_mceliece.ClassicMcEliecePadder{}
 		case "ML-KEM-512", "ML-KEM-768", "ML-KEM-1024":
 			encoder = &encoding_kemeleon.KemeleonEncoder{}
-		//case "KEM1", "KEM2":
-		//	encoder = Kem1Encoder{}
 		default:
 			panic("cryptofactory: contradictory 'allEncodedKems' and switch-case " + kemName)
 		}

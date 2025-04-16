@@ -426,7 +426,6 @@ func testSamplePreimage(t *testing.T, d int) {
 	}
 
 	for x := range q {
-		// TODO change this test and SamplePreimage to work off of compressed values and include decompression
 		comprX := compressSingle(x, d)
 		// only these values can actually show up after decompression
 

@@ -39,10 +39,6 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 )
 
-// Maximum number of bytes that will ever be requested from KdfExpand in implementations
-// TODO move to drivelcrypto as constant, possibly use for XorEncryptDecrypt
-const maxOkmLen = 255 * 32
-
 // Number of times to repeat handshake tests.
 var numRepeats int
 
@@ -73,7 +69,7 @@ func testDrivelcrypto(t *testing.T) {
 	csrand.Bytes(info)
 
 	// KdfExpand
-	for okmLen := 1; okmLen < maxOkmLen; okmLen++ {
+	for okmLen := 1; okmLen < MaxOkmLen; okmLen++ {
 		okm := KdfExpand(pseudorandomKey, info, okmLen)
 		if okm == nil {
 			t.Fatal("Failed to expand using KDF: output is nil")

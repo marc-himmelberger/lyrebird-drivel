@@ -65,8 +65,11 @@ const (
 	// It should be used when a constant-size KDF output is desired.
 	KdfOutLength = sha256.Size
 
-	// XorKeySize
+	// XorKeySize is the length of keys required for XorEncryptDecrypt
 	XorKeySize = 32
+
+	// MaxOkmLen is the maximum value allowed for okmLen in KdfExpand
+	MaxOkmLen = 255 * 32
 )
 
 // Define string constants for info/context inputs to HKDF
@@ -232,7 +235,12 @@ func MessageMAC(ephermalSecret []byte, isClient bool, msg []byte, epochHour int6
 // of key material. pseudorandomKey must be a strong pseudorandom cryptographic key.
 // Info is an arbitrary identifier for the output, repeated key-info pairs will yield the same output.
 // Corresponds to F_1 from https://eprint.iacr.org/2025/408.pdf
+// Panics if okmLen exceeds MaxOkmLen.
 func KdfExpand(pseudorandomKey []byte, info []byte, okmLen int) []byte {
+	if okmLen > MaxOkmLen {
+		panic(fmt.Sprintf("okmLen of %d exceeds the maximum length of %d", okmLen, MaxOkmLen))
+	}
+
 	kdf := hkdf.Expand(sha256.New, pseudorandomKey, info)
 	okm := make([]byte, okmLen)
 	n, err := io.ReadFull(kdf, okm)

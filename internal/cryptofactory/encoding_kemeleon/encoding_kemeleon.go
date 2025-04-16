@@ -77,7 +77,7 @@ func (encoder *KemeleonEncoder) Init(kem kems.KeyEncapsulationMechanism) {
 	case "ML-KEM-768":
 		encoder.t = 192
 		encoder.kemCtxtLength = 1088
-		encoder.kemeleonCtxtLength = 1514 + 8 // XXX: unclear in I-D: if t corresponds to NIST, then sizes are bigger (draft uses t=128 always in Table 2)
+		encoder.kemeleonCtxtLength = 1522
 		encoder.k = 3
 		encoder.eta1 = 2
 		encoder.du = 10
@@ -85,7 +85,7 @@ func (encoder *KemeleonEncoder) Init(kem kems.KeyEncapsulationMechanism) {
 	case "ML-KEM-1024":
 		encoder.t = 256
 		encoder.kemCtxtLength = 1568
-		encoder.kemeleonCtxtLength = 1905 // XXX: similar
+		encoder.kemeleonCtxtLength = 1905
 		encoder.k = 4
 		encoder.eta1 = 2
 		encoder.du = 11
@@ -329,7 +329,6 @@ func (encoder *KemeleonEncoder) vectorEncodeNR(w []uint16) *big.Int {
 
 	l := len(w)                                             // (k+1)*n
 	b := int(math.Ceil(float64(l) * math.Log2(float64(q)))) // log2(q^l) = l * log2(q)
-	// XXX should be ceil(l*log2(q)) in draft?
 	for i, val := range w {
 		z.SetInt64(int64(i))   //
 		z.Exp(qBig, z, nil)    // z = q^i
@@ -366,10 +365,8 @@ func (encoder *KemeleonEncoder) vectorDecodeNR(r *big.Int) []uint16 {
 
 	qBig := big.NewInt(int64(q))
 	z := big.NewInt(int64(l))
-	//v := big.NewInt(0)
 	z.Exp(qBig, z, nil) // z = q^((k+1)*n))
 	r.Mod(r, z)         // r = r % q^((k+1)*n))
-	// XXX typo in I-D, should be r instead of a
 	for i := range w {
 		z.Mod(r, qBig) // z = r % q
 		w[i] = uint16(z.Int64())
