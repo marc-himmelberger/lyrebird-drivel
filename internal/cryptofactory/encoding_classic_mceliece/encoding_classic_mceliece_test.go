@@ -41,6 +41,7 @@ var parameterSets = []string{
 	"Classic-McEliece-6960119",
 }
 
+const minFilterKeepRate = float32(1.0)         // FilterPublicKey should never reject
 const minSuccessRate = float32(1.0)            // encoding should never reject
 const minLooksOkRate = float32(0.96875 - 0.05) // 2^-5 probability of all padding bits being 0 and some margin
 
@@ -50,9 +51,9 @@ var numRepeats int
 func TestMain(m *testing.M) {
 	flag.Parse()
 	if testing.Short() {
-		numRepeats = 10
-	} else {
 		numRepeats = 100
+	} else {
+		numRepeats = 1000
 	}
 	code := m.Run()
 	os.Exit(code)
@@ -61,20 +62,29 @@ func TestMain(m *testing.M) {
 func TestEncoding(t *testing.T) {
 	for _, kemName := range parameterSets {
 		t.Run(kemName, func(t *testing.T) {
+			keygenOkNum := 0
 			encodingOkNum := 0
 			looksOkNum := 0
 			for range numRepeats {
-				encodingOk, looksOk := testSingleKemEncoding(t, kemName)
-				if encodingOk {
-					encodingOkNum++
-					if looksOk {
-						looksOkNum++
+				keygenOk, encodingOk, looksOk := testSingleKemEncoding(t, kemName)
+				if keygenOk {
+					keygenOkNum++
+					if encodingOk {
+						encodingOkNum++
+						if looksOk {
+							looksOkNum++
+						}
 					}
 				}
 			}
 
-			successRate := float32(encodingOkNum) / float32(numRepeats)
+			filterKeepRate := float32(keygenOkNum) / float32(numRepeats)
+			successRate := float32(encodingOkNum) / float32(keygenOkNum)
 			looksOkRate := float32(looksOkNum) / float32(encodingOkNum)
+			if filterKeepRate < minFilterKeepRate {
+				t.Fatalf("Filter-Keep Rate of %f too low. Minimum: %f", filterKeepRate, minFilterKeepRate)
+			}
+			t.Logf("Filter-Keep Rate of %f acceptable. Minimum: %f", filterKeepRate, minFilterKeepRate)
 			if successRate < minSuccessRate {
 				t.Fatalf("Success Rate of %f too low. Minimum: %f", successRate, minSuccessRate)
 			}
@@ -87,7 +97,7 @@ func TestEncoding(t *testing.T) {
 	}
 }
 
-func testSingleKemEncoding(t *testing.T, kemName string) (ok bool, looksOk bool) {
+func testSingleKemEncoding(t *testing.T, kemName string) (keygenOk bool, encodingOk bool, looksOk bool) {
 	kem := (kems.KeyEncapsulationMechanism)(oqs_wrapper.NewOqsWrapper(kemName))
 	encoder := &ClassicMcEliecePadder{}
 
@@ -98,8 +108,15 @@ func testSingleKemEncoding(t *testing.T, kemName string) (ok bool, looksOk bool)
 		panic("Received invalid ciphertext size from KEM")
 	}
 
-	// KeyGen, Encaps
+	// KeyGen
 	keypair := kem.KeyGen()
+	keygenOk = encoder.FilterPublicKey(keypair.Public().Bytes())
+	if !keygenOk {
+		t.Log("encoder.FilterPublicKey(pk) failed")
+		return
+	}
+
+	// Encaps
 	ctxt, _, _ := kem.Encaps(keypair.Public())
 
 	// Specific to Classic-McEliece: Check that top 5 bits are 0
@@ -109,8 +126,8 @@ func testSingleKemEncoding(t *testing.T, kemName string) (ok bool, looksOk bool)
 
 	// EncodeCtxt
 	encodedCtxt := make([]byte, encoder.LengthObfuscatedCiphertext())
-	ok = encoder.EncodeCiphertext(encodedCtxt, ctxt.Bytes())
-	if !ok {
+	encodingOk = encoder.EncodeCiphertext(encodedCtxt, ctxt.Bytes())
+	if !encodingOk {
 		t.Log("encoder.EncodeCiphertext(ctxt) failed")
 		return
 	}

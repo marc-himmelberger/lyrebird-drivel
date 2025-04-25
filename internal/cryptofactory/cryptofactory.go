@@ -32,9 +32,9 @@ import (
 	"slices"
 	"strings"
 
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encaps_encode"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encoding_classic_mceliece"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encoding_kemeleon"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/filter_encode"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/oqs_wrapper"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
@@ -70,7 +70,7 @@ func OkemNames() []string {
 	return allOkemNames
 }
 
-const etePrefix = "EtE-"
+const etePrefix = "FEO-"
 
 // All KEMs for which encoders are available. This list must not be modified at runtime.
 // New entries must be reflected in NewOkem.
@@ -90,7 +90,7 @@ var allEncodedKems = []string{
 Constructs a KEM scheme given a name.
 Legal values for names are:
   - "x25519" for a wrapper around the corresponding obfs4 implementation without obfuscation,
-    but suitable for elligator2 encoding provided via [okems.NewOkem] as "EtE-x25519"
+    but suitable for elligator2 encoding provided via [okems.NewOkem] as "FEO-x25519"
   - Any valid name for a KEM enabled in the open-quantum-safe library.
     These can be viewed via KemNames().
 */
@@ -107,7 +107,7 @@ func NewKem(kemName string) kems.KeyEncapsulationMechanism {
 /*
 Constructs an OKEM scheme given a name.
 Legal values for names are:
-  - "EtE-<kem_name>" if "<kem_name>" is a valid name for
+  - "FEO-<kem_name>" if "<kem_name>" is a valid name for
     [kems.NewKem], and a corresponding [EncapsThenEncode] is implemented.
 
 Possible names for future additions:
@@ -116,7 +116,7 @@ Possible names for future additions:
 */
 func NewOkem(okemName string) okems.ObfuscatedKem {
 	if strings.HasPrefix(okemName, etePrefix) {
-		// "EtE-<kem_name>" if "<kem_name>" is a valid name for [kems.NewKem]
+		// "FEO-<kem_name>" if "<kem_name>" is a valid name for [kems.NewKem]
 		// Construct KEM
 		kemName := okemName[len(etePrefix):]
 		if !slices.Contains(allEncodedKems, kemName) {
@@ -124,7 +124,7 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 		}
 		kem := NewKem(kemName)
 		// Select encoder
-		var encoder encaps_encode.EncapsThenEncode
+		var encoder filter_encode.FilterEncodeObfuscator
 		switch kemName {
 		case "x25519":
 			encoder = &x25519ell2.Elligator2Encoder{}
@@ -144,7 +144,7 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 		if encoder != nil {
 			encoder.Init(kem)
 		}
-		return encaps_encode.NewEncapsThenEncodeOKEM(kem, encoder)
+		return filter_encode.NewFilterEncodeObfuscatorOKEM(kem, encoder)
 	} else if strings.HasPrefix(okemName, "OEINC[") && strings.HasSuffix(okemName, "]") {
 		panic("cryptofactory: OEINC not yet implemented")
 

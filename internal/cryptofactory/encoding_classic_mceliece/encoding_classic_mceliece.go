@@ -31,7 +31,7 @@ import (
 	"strings"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encaps_encode"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/filter_encode"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
 
@@ -56,6 +56,9 @@ func (encoder *ClassicMcEliecePadder) Init(kem kems.KeyEncapsulationMechanism) {
 func (encoder *ClassicMcEliecePadder) LengthObfuscatedCiphertext() int {
 	return 194
 }
+func (encoder *ClassicMcEliecePadder) FilterPublicKey(publicKey []byte) (ok bool) {
+	return true
+}
 func (encoder *ClassicMcEliecePadder) EncodeCiphertext(obfCiphertext []byte, kemCiphertext []byte) (ok bool) {
 	var rand_byte [1]byte
 	err := csrand.Bytes(rand_byte[:])
@@ -73,4 +76,4 @@ func (encoder *ClassicMcEliecePadder) DecodeCiphertext(kemCiphertext []byte, obf
 	kemCiphertext[193] &= (^mask)
 }
 
-var _ encaps_encode.EncapsThenEncode = (*ClassicMcEliecePadder)(nil)
+var _ filter_encode.FilterEncodeObfuscator = (*ClassicMcEliecePadder)(nil)

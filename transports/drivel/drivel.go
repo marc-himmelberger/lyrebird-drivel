@@ -77,7 +77,7 @@ const (
 
 	// The proper way would be to add a TOR_PT_CLIENT_TRANSPORT_OPTIONS
 	kemName  = "Classic-McEliece-348864"
-	okemName = "EtE-Classic-McEliece-348864"
+	okemName = "FEO-Classic-McEliece-348864"
 )
 
 const (

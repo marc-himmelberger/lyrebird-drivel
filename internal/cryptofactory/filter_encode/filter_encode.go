@@ -28,7 +28,7 @@
 // The encaps_encode.go file defines the encapsulate-then-encode
 // construction defined in https://eprint.iacr.org/2024/1086.
 
-package encaps_encode
+package filter_encode
 
 import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/log"
@@ -39,9 +39,11 @@ import (
 
 // Encoders should not allocate memory nor check slice lengths.
 // Encoders may panic if the slice lengths are invalid.
-type EncapsThenEncode interface {
+// FilterPublicKey must return true iff the public key can be used.
+type FilterEncodeObfuscator interface {
 	Init(kems.KeyEncapsulationMechanism)
 	LengthObfuscatedCiphertext() int
+	FilterPublicKey(publicKey []byte) (ok bool)
 	EncodeCiphertext(obfCiphertext []byte, kemCiphertext []byte) (ok bool)
 	DecodeCiphertext(kemCiphertext []byte, obfCiphertext []byte)
 }
@@ -49,62 +51,67 @@ type EncapsThenEncode interface {
 // Constructs an OKEM based on a KEM and encoder.
 // The encoder may be 'nil' in which case the KEM is used directly.
 // The encoder must already be initialized with the kem.
-type EncapsThenEncodeOKEM struct {
+type FilterEncodeObfuscatorOKEM struct {
 	kem     kems.KeyEncapsulationMechanism
-	encoder EncapsThenEncode
+	encoder FilterEncodeObfuscator
 }
 
-func NewEncapsThenEncodeOKEM(kem kems.KeyEncapsulationMechanism, encoder EncapsThenEncode) *EncapsThenEncodeOKEM {
-	return &EncapsThenEncodeOKEM{kem, encoder}
+func NewFilterEncodeObfuscatorOKEM(kem kems.KeyEncapsulationMechanism, encoder FilterEncodeObfuscator) *FilterEncodeObfuscatorOKEM {
+	return &FilterEncodeObfuscatorOKEM{kem, encoder}
 }
 
-// Name of encaps-then-encapsulate construction only prefixes "EtE-"
-func (ete *EncapsThenEncodeOKEM) Name() string {
-	return "EtE-" + ete.kem.Name()
+// Name of encaps-then-encapsulate construction only prefixes "FEO-"
+func (feo *FilterEncodeObfuscatorOKEM) Name() string {
+	return "FEO-" + feo.kem.Name()
 }
 
 // LengthPublicKey of encaps-then-encapsulate construction uses KEM directly
-func (ete *EncapsThenEncodeOKEM) LengthPublicKey() int {
-	return ete.kem.LengthPublicKey()
+func (feo *FilterEncodeObfuscatorOKEM) LengthPublicKey() int {
+	return feo.kem.LengthPublicKey()
 }
 
 // LengthPrivateKey of encaps-then-encapsulate construction uses KEM directly
-func (ete *EncapsThenEncodeOKEM) LengthPrivateKey() int {
-	return ete.kem.LengthPrivateKey()
+func (feo *FilterEncodeObfuscatorOKEM) LengthPrivateKey() int {
+	return feo.kem.LengthPrivateKey()
 }
 
 // LengthCiphertext of encaps-then-encapsulate construction replaces the length
 // of KEM ciphertexts by the length of the encoder's output
-func (ete *EncapsThenEncodeOKEM) LengthCiphertext() int {
-	if ete.encoder == nil {
-		return ete.kem.LengthCiphertext()
+func (feo *FilterEncodeObfuscatorOKEM) LengthCiphertext() int {
+	if feo.encoder == nil {
+		return feo.kem.LengthCiphertext()
 	}
-	return ete.encoder.LengthObfuscatedCiphertext()
+	return feo.encoder.LengthObfuscatedCiphertext()
 }
 
 // LengthSharedSecret of encaps-then-encapsulate construction uses KEM directly
-func (ete *EncapsThenEncodeOKEM) LengthSharedSecret() int {
-	return ete.kem.LengthSharedSecret()
+func (feo *FilterEncodeObfuscatorOKEM) LengthSharedSecret() int {
+	return feo.kem.LengthSharedSecret()
 }
 
 // KeyGen of encaps-then-encapsulate construction uses KEM directly
-func (ete *EncapsThenEncodeOKEM) KeyGen() *okems.Keypair {
-	kemKeypair := ete.kem.KeyGen()
+func (feo *FilterEncodeObfuscatorOKEM) KeyGen() *okems.Keypair {
+	kemKeypair := feo.kem.KeyGen()
+	ok := feo.encoder == nil
+	for !ok {
+		kemKeypair = feo.kem.KeyGen()
+		ok = feo.encoder.FilterPublicKey(kemKeypair.Public().Bytes())
+	}
 
 	return okems.KeypairFromBytes(
 		kemKeypair.Private().Bytes(), kemKeypair.Public().Bytes(),
-		ete.kem.LengthPrivateKey(), ete.kem.LengthPublicKey(),
+		feo.kem.LengthPrivateKey(), feo.kem.LengthPublicKey(),
 	)
 }
 
 // Encaps of encaps-then-encapsulate construction performs KEM encapsulation and
 // then encodes the resulting ciphertext using the encoder, not changing the shared secret
-func (ete *EncapsThenEncodeOKEM) Encaps(public okems.PublicKey) (okems.ObfuscatedCiphertext, okems.SharedSecret, error) {
-	public.AssertSize(ete.kem.LengthPublicKey())
+func (feo *FilterEncodeObfuscatorOKEM) Encaps(public okems.PublicKey) (okems.ObfuscatedCiphertext, okems.SharedSecret, error) {
+	public.AssertSize(feo.kem.LengthPublicKey())
 	kemPublicKey := (kems.PublicKey)(public)
 
 	for {
-		kemCiphertext, sharedSecret, err := ete.kem.Encaps(kemPublicKey)
+		kemCiphertext, sharedSecret, err := feo.kem.Encaps(kemPublicKey)
 		if err != nil {
 			return okems.ObfuscatedCiphertext(cryptodata.Nil), okems.SharedSecret(cryptodata.Nil), err
 		}
@@ -112,18 +119,18 @@ func (ete *EncapsThenEncodeOKEM) Encaps(public okems.PublicKey) (okems.Obfuscate
 		okemSharedSecret := okems.SharedSecret(sharedSecret)
 		var obfCiphertext cryptodata.CryptoData
 
-		if ete.encoder == nil {
+		if feo.encoder == nil {
 			obfCiphertext = (cryptodata.CryptoData)(kemCiphertext)
 		} else {
-			obfCtxt := make([]byte, ete.LengthCiphertext())
+			obfCtxt := make([]byte, feo.LengthCiphertext())
 
-			ok := ete.encoder.EncodeCiphertext(obfCtxt, kemCiphertext.Bytes())
+			ok := feo.encoder.EncodeCiphertext(obfCtxt, kemCiphertext.Bytes())
 			if !ok {
 				log.Debugf("cryptofactory - retrying encode for ciphertext")
 				continue
 			}
 
-			obfCiphertext, err = cryptodata.New(obfCtxt, ete.LengthCiphertext())
+			obfCiphertext, err = cryptodata.New(obfCtxt, feo.LengthCiphertext())
 			if err != nil {
 				return okems.ObfuscatedCiphertext(cryptodata.Nil), okems.SharedSecret(cryptodata.Nil), err
 			}
@@ -135,26 +142,26 @@ func (ete *EncapsThenEncodeOKEM) Encaps(public okems.PublicKey) (okems.Obfuscate
 
 // Decaps of encaps-then-encapsulate construction uses the encoder to decode the ciphertext,
 // and performs KEM decapsulation on the result
-func (ete *EncapsThenEncodeOKEM) Decaps(private okems.PrivateKey, obfCiphertext okems.ObfuscatedCiphertext) (okems.SharedSecret, error) {
-	obfCiphertext.AssertSize(ete.LengthCiphertext())
-	private.AssertSize(ete.kem.LengthPrivateKey())
+func (feo *FilterEncodeObfuscatorOKEM) Decaps(private okems.PrivateKey, obfCiphertext okems.ObfuscatedCiphertext) (okems.SharedSecret, error) {
+	obfCiphertext.AssertSize(feo.LengthCiphertext())
+	private.AssertSize(feo.kem.LengthPrivateKey())
 	kemPrivateKey := (kems.PrivateKey)(private)
 
 	var kemCiphertext cryptodata.CryptoData
-	if ete.encoder == nil {
+	if feo.encoder == nil {
 		kemCiphertext = (cryptodata.CryptoData)(obfCiphertext)
 	} else {
-		ctxt := make([]byte, ete.kem.LengthCiphertext())
-		ete.encoder.DecodeCiphertext(ctxt, obfCiphertext.Bytes())
+		ctxt := make([]byte, feo.kem.LengthCiphertext())
+		feo.encoder.DecodeCiphertext(ctxt, obfCiphertext.Bytes())
 
 		var err error
-		kemCiphertext, err = cryptodata.New(ctxt, ete.kem.LengthCiphertext())
+		kemCiphertext, err = cryptodata.New(ctxt, feo.kem.LengthCiphertext())
 		if err != nil {
 			return okems.SharedSecret(cryptodata.Nil), err
 		}
 	}
 
-	sharedSecret, err := ete.kem.Decaps(kemPrivateKey, kems.Ciphertext(kemCiphertext))
+	sharedSecret, err := feo.kem.Decaps(kemPrivateKey, kems.Ciphertext(kemCiphertext))
 	if err != nil {
 		return okems.SharedSecret(cryptodata.Nil), err
 	}
@@ -162,4 +169,4 @@ func (ete *EncapsThenEncodeOKEM) Decaps(private okems.PrivateKey, obfCiphertext 
 	return okems.SharedSecret(sharedSecret), nil
 }
 
-var _ okems.ObfuscatedKem = (*EncapsThenEncodeOKEM)(nil)
+var _ okems.ObfuscatedKem = (*FilterEncodeObfuscatorOKEM)(nil)

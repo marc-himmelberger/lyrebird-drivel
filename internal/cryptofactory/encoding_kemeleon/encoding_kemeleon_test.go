@@ -50,7 +50,8 @@ var parameterSets = []string{
 	"ML-KEM-1024",
 }
 
-const minSuccessRate = float32(1.0) // encoding should never reject
+const minFilterKeepRate = float32(1.0) // FilterPublicKey should never reject
+const minSuccessRate = float32(1.0)    // encoding should never reject
 
 // Number of times to repeat correctness tests for applicable KEMs.
 var numRepeats int
@@ -61,10 +62,10 @@ var numRepeatsPreimg int
 func TestMain(m *testing.M) {
 	flag.Parse()
 	if testing.Short() {
-		numRepeats = 10
+		numRepeats = 100
 		numRepeatsPreimg = 1000
 	} else {
-		numRepeats = 100
+		numRepeats = 1000
 		numRepeatsPreimg = 10000
 	}
 	code := m.Run()
@@ -74,15 +75,24 @@ func TestMain(m *testing.M) {
 func TestEncoding(t *testing.T) {
 	for _, kemName := range parameterSets {
 		t.Run(kemName, func(t *testing.T) {
+			keygenOkNum := 0
 			encodingOkNum := 0
 			for range numRepeats {
-				encodingOk := testSingleKemEncoding(t, kemName)
-				if encodingOk {
-					encodingOkNum++
+				keygenOk, encodingOk := testSingleKemEncoding(t, kemName)
+				if keygenOk {
+					keygenOkNum++
+					if encodingOk {
+						encodingOkNum++
+					}
 				}
 			}
 
-			successRate := float32(encodingOkNum) / float32(numRepeats)
+			filterKeepRate := float32(keygenOkNum) / float32(numRepeats)
+			successRate := float32(encodingOkNum) / float32(keygenOkNum)
+			if filterKeepRate < minFilterKeepRate {
+				t.Fatalf("Filter-Keep Rate of %f too low. Minimum: %f", filterKeepRate, minFilterKeepRate)
+			}
+			t.Logf("Filter-Keep Rate of %f acceptable. Minimum: %f", filterKeepRate, minFilterKeepRate)
 			if successRate < minSuccessRate {
 				t.Fatalf("Success Rate of %f too low. Minimum: %f", successRate, minSuccessRate)
 			}
@@ -91,7 +101,7 @@ func TestEncoding(t *testing.T) {
 	}
 }
 
-func testSingleKemEncoding(t *testing.T, kemName string) (ok bool) {
+func testSingleKemEncoding(t *testing.T, kemName string) (keygenOk bool, encodingOk bool) {
 	kem := (kems.KeyEncapsulationMechanism)(oqs_wrapper.NewOqsWrapper(kemName))
 	encoder := &KemeleonEncoder{}
 
@@ -102,14 +112,21 @@ func testSingleKemEncoding(t *testing.T, kemName string) (ok bool) {
 		panic("encoding_mlkem_kemeleon: Received invalid ciphertext size from KEM")
 	}
 
-	// KeyGen, Encaps
+	// KeyGen
 	keypair := kem.KeyGen()
+	keygenOk = encoder.FilterPublicKey(keypair.Public().Bytes())
+	if !keygenOk {
+		t.Log("encoder.FilterPublicKey(pk) failed")
+		return
+	}
+
+	// Encaps
 	ctxt, _, _ := kem.Encaps(keypair.Public())
 
 	// EncodeCtxt
 	encodedCtxt := make([]byte, encoder.LengthObfuscatedCiphertext())
-	ok = encoder.EncodeCiphertext(encodedCtxt, ctxt.Bytes())
-	if !ok {
+	encodingOk = encoder.EncodeCiphertext(encodedCtxt, ctxt.Bytes())
+	if !encodingOk {
 		t.Log("encoder.EncodeCiphertext(ctxt) failed")
 		return
 	}

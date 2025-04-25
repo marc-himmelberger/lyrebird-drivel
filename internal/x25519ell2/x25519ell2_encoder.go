@@ -24,6 +24,7 @@ import (
 	"gitlab.com/yawning/edwards25519-extra/elligator2"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/filter_encode"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
 
@@ -40,6 +41,12 @@ func (encoder *Elligator2Encoder) Init(_ kems.KeyEncapsulationMechanism) {
 }
 func (encoder *Elligator2Encoder) LengthObfuscatedCiphertext() int {
 	return RepresentativeLength
+}
+func (encoder *Elligator2Encoder) FilterPublicKey(publicKey []byte) (ok bool) {
+	// No KEM public keys are rejected: From an outside perspective, the "public keys" which
+	// are actually encoded using elligator2 below are in fact ciphertexts. What we call public keys
+	// here are the static keys (e.g. distributed by the bridge) - these are not encoded.
+	return true
 }
 
 // Utility function, added for fixed-tweak test cases. Used in EncodeCiphertext.
@@ -91,3 +98,5 @@ func (encoder *Elligator2Encoder) DecodeCiphertext(kemCiphertext []byte, obfCiph
 	u, _ := elligator2.MontgomeryFlavor(&fe)
 	copy(kemCiphertext[:], u.Bytes())
 }
+
+var _ filter_encode.FilterEncodeObfuscator = (*Elligator2Encoder)(nil)

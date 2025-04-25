@@ -34,7 +34,7 @@ import (
 	"math/big"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encaps_encode"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/filter_encode"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 )
 
@@ -96,6 +96,9 @@ func (encoder *KemeleonEncoder) Init(kem kems.KeyEncapsulationMechanism) {
 }
 func (encoder *KemeleonEncoder) LengthObfuscatedCiphertext() int {
 	return encoder.kemeleonCtxtLength
+}
+func (encoder *KemeleonEncoder) FilterPublicKey(publicKey []byte) (ok bool) {
+	return true
 }
 
 // Parses a ciphertext as a concatenation of two values: c1 || c2
@@ -411,4 +414,4 @@ func (encoder *KemeleonEncoder) DecodeCiphertext(kemCiphertext []byte, obfCipher
 	copy(kemCiphertext, ctxt)
 }
 
-var _ encaps_encode.EncapsThenEncode = (*KemeleonEncoder)(nil)
+var _ filter_encode.FilterEncodeObfuscator = (*KemeleonEncoder)(nil)
