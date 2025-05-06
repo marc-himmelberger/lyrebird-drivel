@@ -33,6 +33,7 @@ import (
 	"strings"
 
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encoding_classic_mceliece"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encoding_hqc"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/encoding_kemeleon"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/filter_encode"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory/oqs_wrapper"
@@ -84,6 +85,9 @@ var allEncodedKems = []string{
 	"ML-KEM-512",
 	"ML-KEM-768",
 	"ML-KEM-1024",
+	"HQC-128",
+	"HQC-192",
+	"HQC-256",
 }
 
 /*
@@ -137,6 +141,8 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 			encoder = &encoding_classic_mceliece.ClassicMcEliecePadder{}
 		case "ML-KEM-512", "ML-KEM-768", "ML-KEM-1024":
 			encoder = &encoding_kemeleon.KemeleonEncoder{}
+		case "HQC-128", "HQC-192", "HQC-256":
+			encoder = &encoding_hqc.HqcEncoder{}
 		default:
 			panic("cryptofactory: contradictory 'allEncodedKems' and switch-case " + kemName)
 		}
