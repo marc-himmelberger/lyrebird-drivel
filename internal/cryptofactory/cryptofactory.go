@@ -55,23 +55,33 @@ func init() {
 
 // List of all supported KEM names.
 func KemNames() []string {
-	res := make([]string, len(allKemNames))
-	copy(res, allKemNames)
+	res := make([]string, 0, len(allKemNames))
+
+	// disabled Classic McEliece KEM due to large impact on memory usage and unlikeliness to be used, OKEM is still available
+	// copy all other KEMs into res
+	for _, kemName := range allKemNames {
+		if strings.Contains(kemName, "Classic-McEliece") {
+			continue
+		} else {
+			res = append(res, kemName)
+		}
+	}
+
 	return res
 }
 
 // List of all supported KEM names.
 func OkemNames() []string {
 	allOkemNames := make([]string, 0, len(allKemNames))
-	for _, kemName := range KemNames() {
+	for _, kemName := range allKemNames {
 		if slices.Contains(allEncodedKems, kemName) {
-			allOkemNames = append(allOkemNames, etePrefix+kemName)
+			allOkemNames = append(allOkemNames, encoderPrefix+kemName)
 		}
 	}
 	return allOkemNames
 }
 
-const etePrefix = "FEO-"
+const encoderPrefix = "FEO-"
 
 // All KEMs for which encoders are available. This list must not be modified at runtime.
 // New entries must be reflected in NewOkem.
@@ -101,7 +111,7 @@ Legal values for names are:
 func NewKem(kemName string) kems.KeyEncapsulationMechanism {
 	if kemName == "x25519" {
 		return &x25519ell2.X25519KEM{}
-	} else if slices.Contains(oqs_wrapper.OqsEnabledKEMs, kemName) {
+	} else if slices.Contains(oqs_wrapper.OqsEnabledKEMs, kemName) && slices.Contains(KemNames(), kemName) {
 		return oqs_wrapper.NewOqsWrapper(kemName)
 	} else {
 		panic("cryptofactory: no KEM found for name: " + kemName)
@@ -119,30 +129,35 @@ Possible names for future additions:
     valid names for [okems.NewOkem]
 */
 func NewOkem(okemName string) okems.ObfuscatedKem {
-	if strings.HasPrefix(okemName, etePrefix) {
+	if strings.HasPrefix(okemName, encoderPrefix) {
 		// "FEO-<kem_name>" if "<kem_name>" is a valid name for [kems.NewKem]
 		// Construct KEM
-		kemName := okemName[len(etePrefix):]
+		kemName := okemName[len(encoderPrefix):]
 		if !slices.Contains(allEncodedKems, kemName) {
 			panic("cryptofactory: no encoding mapped for KEM " + kemName)
 		}
-		kem := NewKem(kemName)
+		var kem kems.KeyEncapsulationMechanism
 		// Select encoder
 		var encoder filter_encode.FilterEncodeObfuscator
 		switch kemName {
 		case "x25519":
 			encoder = &x25519ell2.Elligator2Encoder{}
+			kem = NewKem(kemName)
 		case "Classic-McEliece-348864",
 			"Classic-McEliece-460896",
 			"Classic-McEliece-6688128",
 			"Classic-McEliece-8192128":
 			encoder = nil
+			kem = oqs_wrapper.NewOqsWrapper(kemName)
 		case "Classic-McEliece-6960119":
 			encoder = &encoding_classic_mceliece.ClassicMcEliecePadder{}
+			kem = oqs_wrapper.NewOqsWrapper(kemName)
 		case "ML-KEM-512", "ML-KEM-768", "ML-KEM-1024":
 			encoder = &encoding_kemeleon.KemeleonEncoder{}
+			kem = NewKem(kemName)
 		case "HQC-128", "HQC-192", "HQC-256":
 			encoder = &encoding_hqc.HqcEncoder{}
+			kem = NewKem(kemName)
 		default:
 			panic("cryptofactory: contradictory 'allEncodedKems' and switch-case " + kemName)
 		}

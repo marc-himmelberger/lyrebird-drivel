@@ -45,12 +45,13 @@ import (
 )
 
 const (
-	// Currently set to 334 pages of 4KB (for good alignment) each:
-	// with 332 pages, TestGetLengthDetails verifies that all data can fit
-	// we then also add the original 8192 bytes for padding
-	// => buffer is 1.305 MiB
-	// TODO: Change back to 8192 after there is fragmentation
-	maxHandshakeLength = 1368064
+	// Currently set to 11 pages of 4KiB each (for good alignment).
+	// with 35973 B, TestGetLengthDetails first verifies that all data can fit
+	// this corresponds to 8.7825 pages - we then also add the original 8192 B for padding
+	// => buffer is 35.130 KiB
+	// TODO Using better fragmentation, a reduction by another 21520 B is plausible (size of FrodoKEM-1344 public keys)
+	// A static choice of KEM/OKEM combination (at compile-time) could also reduce this significantly (~ 10 KiB)
+	maxHandshakeLength = 45056
 
 	inlineSeedFrameLength = framing.FrameOverhead + packetOverhead + seedPacketPayloadLength
 )

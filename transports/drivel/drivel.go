@@ -76,7 +76,7 @@ const (
 	maxCloseDelay = 60
 
 	// The proper way would be to add a TOR_PT_CLIENT_TRANSPORT_OPTIONS
-	kemName  = "Classic-McEliece-348864"
+	kemName  = "ML-KEM-512"
 	okemName = "FEO-Classic-McEliece-348864"
 )
 
