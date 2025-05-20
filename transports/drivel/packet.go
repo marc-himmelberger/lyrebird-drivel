@@ -49,6 +49,7 @@ const (
 const (
 	packetTypePayload = iota
 	packetTypePrngSeed
+	packetTypeHandshakeMsg // TODO use everywhere else
 )
 
 // InvalidPacketLengthError is the error returned when decodePacket detects a
@@ -69,6 +70,9 @@ func (e InvalidPayloadLengthError) Error() string {
 
 var zeroPadBytes [maxPacketPaddingLength]byte
 
+// TODO separate this code away from drivelConn, so we can one-shot makePacket using enough arguments
+// keep this around to not complicate the interface. Note that padLen can come from anywhere
+// and we don't expect a certain length at the packet-layer.
 func (conn *drivelConn) makePacket(w io.Writer, pktType uint8, data []byte, padLen uint16) error {
 	var pkt [framing.MaximumFramePayloadLength]byte
 

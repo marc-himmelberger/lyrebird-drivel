@@ -51,7 +51,7 @@
 //
 // The NaCl secretbox (Poly1305/XSalsa20) nonce format is:
 //
-//	uint8_t[24] prefix (Fixed)
+//	uint8_t[16] prefix (Fixed)
 //	uint64_t    counter (Big endian)
 //
 // The counter is initialized to 1, and is incremented on each frame.  Since
@@ -131,6 +131,7 @@ func (nonce *boxNonce) init(prefix []byte) {
 	nonce.counter = 1
 }
 
+// Combines already present prefix and counter values into a nonce
 func (nonce boxNonce) bytes(out *[nonceLength]byte) error {
 	// The security guarantee of Poly1305 is broken if a nonce is ever reused
 	// for a given key.  Detect this by checking for counter wraparound since
