@@ -98,6 +98,9 @@ var allEncodedKems = []string{
 	"HQC-128",
 	"HQC-192",
 	"HQC-256",
+	"FrodoKEM-640-AES",
+	"FrodoKEM-976-AES",
+	"FrodoKEM-1344-AES",
 }
 
 /*
@@ -157,6 +160,9 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 			kem = NewKem(kemName)
 		case "HQC-128", "HQC-192", "HQC-256":
 			encoder = &encoding_hqc.HqcEncoder{}
+			kem = NewKem(kemName)
+		case "FrodoKEM-640-AES", "FrodoKEM-976-AES", "FrodoKEM-1344-AES":
+			encoder = nil
 			kem = NewKem(kemName)
 		default:
 			panic("cryptofactory: contradictory 'allEncodedKems' and switch-case " + kemName)
