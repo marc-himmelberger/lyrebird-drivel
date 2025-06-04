@@ -64,7 +64,10 @@ func TestKemCorrectness(t *testing.T) {
 
 // testSingleKemCorrectness tests correctness for one run of one KEM.
 func testSingleKemCorrectness(t *testing.T, kemName string) {
-	kem := NewKem(kemName)
+	kem, err := NewKem(kemName)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
 
 	// KeyGen
 	keypair := kem.KeyGen()
@@ -104,7 +107,10 @@ func TestOkemCorrectness(t *testing.T) {
 
 // testSingleOkemCorrectness tests correctness for one run of one OKEM.
 func testSingleOkemCorrectness(t *testing.T, okemName string) {
-	okem := NewOkem(okemName)
+	okem, err := NewOkem(okemName)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
 
 	// KeyGen
 	keypair := okem.KeyGen()
@@ -134,7 +140,10 @@ func BenchmarkKems(b *testing.B) {
 	b.Log("Benchmarking KEMs:", kemNames)
 
 	for _, kemName := range kemNames {
-		kem := NewKem(kemName)
+		kem, err := NewKem(kemName)
+		if err != nil {
+			b.Fatalf("%s", err)
+		}
 
 		b.Run(kemName+"-KeyGen", func(b *testing.B) {
 			for b.Loop() {
@@ -163,7 +172,10 @@ func BenchmarkOkems(b *testing.B) {
 	b.Log("Benchmarking OKEMs:", okemNames)
 
 	for _, okemName := range okemNames {
-		okem := NewOkem(okemName)
+		okem, err := NewOkem(okemName)
+		if err != nil {
+			b.Fatalf("%s", err)
+		}
 
 		b.Run(okemName+"-KeyGen", func(b *testing.B) {
 			for b.Loop() {

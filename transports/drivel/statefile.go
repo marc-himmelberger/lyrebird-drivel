@@ -38,6 +38,8 @@ import (
 	pt "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/goptlib"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/csrand"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/drbg"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory"
+	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/drivel/drivelcrypto"
 )
@@ -49,6 +51,7 @@ const (
 )
 
 type jsonPublicKey struct {
+	KemName   string `json:"kem"`
 	OkemName  string `json:"okem"`
 	NodeID    string `json:"node-id"`
 	PublicKey string `json:"public-key"`
@@ -65,6 +68,8 @@ type jsonServerState struct {
 }
 
 type drivelServerState struct {
+	kem         kems.KeyEncapsulationMechanism
+	okem        okems.ObfuscatedKem
 	nodeID      *drivelcrypto.NodeID
 	identityKey *okems.Keypair
 	drbgSeed    *drbg.Seed
@@ -75,14 +80,12 @@ func (st *drivelServerState) clientString() string {
 	return fmt.Sprintf("%s=%s %s=%d", nodeIDArg, st.nodeID.Hex(), iatArg, st.iatMode)
 }
 
-func serverStateFromArgs(stateDir string, args *pt.Args, okem okems.ObfuscatedKem) (*drivelServerState, error) {
+func serverStateFromArgs(stateDir string, args *pt.Args) (*drivelServerState, error) {
 	var js jsonServerState
 	var nodeIDOk, privKeyOk, seedOk bool
 
-	// HACK: Should be loaded from args, but that would still require hardcoding them for the client
-	// our only goal is to check that the file content is consistent
-	js.KemName = kemScheme.Name()
-	js.OkemName = okemScheme.Name()
+	js.KemName, _ = args.Get(kemNameArg)
+	js.OkemName, _ = args.Get(okemNameArg)
 	js.NodeID, nodeIDOk = args.Get(nodeIDArg)
 	js.PrivateKey, privKeyOk = args.Get(privateKeyArg)
 	js.DrbgSeed, seedOk = args.Get(seedArg)
@@ -91,7 +94,7 @@ func serverStateFromArgs(stateDir string, args *pt.Args, okem okems.ObfuscatedKe
 	// Either a private key, node id, and seed are ALL specified, or
 	// they should be loaded from the state file.
 	if !privKeyOk && !nodeIDOk && !seedOk {
-		if err := jsonServerStateFromFile(stateDir, &js, okem); err != nil {
+		if err := jsonServerStateFromFile(stateDir, &js); err != nil {
 			return nil, err
 		}
 	} else if !privKeyOk {
@@ -113,23 +116,23 @@ func serverStateFromArgs(stateDir string, args *pt.Args, okem okems.ObfuscatedKe
 		js.IATMode = iatMode
 	}
 
-	return serverStateFromJSONServerState(stateDir, &js, okem)
+	return serverStateFromJSONServerState(stateDir, &js)
 }
 
-func serverStateFromJSONServerState(stateDir string, js *jsonServerState, okem okems.ObfuscatedKem) (*drivelServerState, error) {
+func serverStateFromJSONServerState(stateDir string, js *jsonServerState) (*drivelServerState, error) {
 	var err error
 
 	st := new(drivelServerState)
-	if js.KemName != kemScheme.Name() {
-		return nil, fmt.Errorf("invalid kemName '%s', should be '%s'", js.KemName, kemScheme.Name())
+	if st.kem, err = cryptofactory.NewKem(js.KemName); err != nil {
+		return nil, err
 	}
-	if js.OkemName != okemScheme.Name() {
-		return nil, fmt.Errorf("invalid okemName '%s', should be '%s'", js.OkemName, okemScheme.Name())
+	if st.okem, err = cryptofactory.NewOkem(js.OkemName); err != nil {
+		return nil, err
 	}
 	if st.nodeID, err = drivelcrypto.NodeIDFromHex(js.NodeID); err != nil {
 		return nil, err
 	}
-	if st.identityKey, err = okems.KeypairFromHex(okem, js.PrivateKey, js.PublicKey); err != nil {
+	if st.identityKey, err = okems.KeypairFromHex(st.okem, js.PrivateKey, js.PublicKey); err != nil {
 		return nil, err
 	}
 	if st.drbgSeed, err = drbg.SeedFromHex(js.DrbgSeed); err != nil {
@@ -149,12 +152,12 @@ func serverStateFromJSONServerState(stateDir string, js *jsonServerState, okem o
 	return st, writeJSONServerState(stateDir, js)
 }
 
-func jsonServerStateFromFile(stateDir string, js *jsonServerState, okem okems.ObfuscatedKem) error {
+func jsonServerStateFromFile(stateDir string, js *jsonServerState) error {
 	fPath := path.Join(stateDir, stateFile)
 	f, err := ioutil.ReadFile(fPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			if err = newJSONServerState(stateDir, js, okem); err == nil {
+			if err = newJSONServerState(stateDir, js); err == nil {
 				return nil
 			}
 		}
@@ -172,35 +175,53 @@ func publicKeyFileNameFromNodeIdHex(nodeIdHex string) string {
 	return fmt.Sprintf(keyFileFormat, nodeIdHex[:16])
 }
 
-func publicKeyStrFromFile(stateDir string, nodeID *drivelcrypto.NodeID) (string, error) {
+func bridgeInfoFromFile(stateDir string, nodeID *drivelcrypto.NodeID) (kems.KeyEncapsulationMechanism, okems.ObfuscatedKem, string, error) {
 	fPath := path.Join(stateDir, publicKeyFileNameFromNodeIdHex(nodeID.Hex()))
 	f, err := ioutil.ReadFile(fPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("cannot find required public key file '%s': %s", fPath, err)
+			return nil, nil, "", fmt.Errorf("cannot find required public key file '%s': %s", fPath, err)
 		}
-		return "", err
+		return nil, nil, "", err
 	}
 
 	js := new(jsonPublicKey)
 
 	if err := json.Unmarshal(f, js); err != nil {
-		return "", fmt.Errorf("failed to load keyfile '%s': %s", fPath, err)
+		return nil, nil, "", fmt.Errorf("failed to load keyfile '%s': %s", fPath, err)
 	}
 
 	if js.NodeID != nodeID.Hex() {
-		return "", fmt.Errorf("failed to load keyfile '%s': invalid nodeID '%s', should be '%s'", fPath, js.NodeID, nodeID.Hex())
-	}
-	if js.OkemName != okemScheme.Name() {
-		return "", fmt.Errorf("failed to load keyfile '%s': invalid okemName '%s', should be '%s'", fPath, js.OkemName, okemScheme.Name())
+		return nil, nil, "", fmt.Errorf("failed to load keyfile '%s': invalid nodeID '%s', should be '%s'", fPath, js.NodeID, nodeID.Hex())
 	}
 
-	return js.PublicKey, nil
+	kem, err := cryptofactory.NewKem(js.KemName)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	okem, err := cryptofactory.NewOkem(js.OkemName)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return kem, okem, js.PublicKey, nil
 }
 
-func newJSONServerState(stateDir string, js *jsonServerState, okem okems.ObfuscatedKem) (err error) {
-	// Generate everything a server needs, using the cryptographic PRNG.
+func newJSONServerState(stateDir string, js *jsonServerState) (err error) {
 	var st drivelServerState
+	// We need to be able to initialize KEM and OKEM if the server state is not loaded
+	if js.KemName == "" {
+		return fmt.Errorf("failed to load statefile - missing argument '%s'", kemNameArg)
+	} else if js.OkemName == "" {
+		return fmt.Errorf("failed to load statefile - missing argument '%s'", okemNameArg)
+	}
+	if st.kem, err = cryptofactory.NewKem(js.KemName); err != nil {
+		return err
+	}
+	if st.okem, err = cryptofactory.NewOkem(js.OkemName); err != nil {
+		return err
+	}
+
+	// Generate everything a server needs, using the cryptographic PRNG.
 	rawID := make([]byte, drivelcrypto.NodeIDLength)
 	if err = csrand.Bytes(rawID); err != nil {
 		return
@@ -208,15 +229,15 @@ func newJSONServerState(stateDir string, js *jsonServerState, okem okems.Obfusca
 	if st.nodeID, err = drivelcrypto.NewNodeID(rawID); err != nil {
 		return
 	}
-	st.identityKey = okem.KeyGen()
+	st.identityKey = st.okem.KeyGen()
 	if st.drbgSeed, err = drbg.NewSeed(); err != nil {
 		return
 	}
 	st.iatMode = iatNone
 
 	// Encode it into JSON format and write the state file.
-	js.KemName = kemScheme.Name()
-	js.OkemName = okemScheme.Name()
+	js.KemName = st.kem.Name()
+	js.OkemName = st.okem.Name()
 	js.NodeID = st.nodeID.Hex()
 	js.PrivateKey = st.identityKey.Private().Hex()
 	js.PublicKey = st.identityKey.Public().Hex()
@@ -269,7 +290,8 @@ func newBridgeFile(stateDir string, st *drivelServerState) error {
 	// Also encode public key for its own file
 	jsPk := new(jsonPublicKey)
 
-	jsPk.OkemName = okemScheme.Name()
+	jsPk.KemName = st.kem.Name()
+	jsPk.OkemName = st.okem.Name()
 	jsPk.NodeID = st.nodeID.Hex()
 	jsPk.PublicKey = st.identityKey.Public().Hex()
 

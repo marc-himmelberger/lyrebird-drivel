@@ -53,8 +53,14 @@ func TestGetLengthDetails(t *testing.T) {
 }
 
 func testSingleGetLengthDetails(t *testing.T, okemName string, kemName string) {
-	okem := cryptofactory.NewOkem(okemName)
-	kem := cryptofactory.NewKem(kemName)
+	okem, err := cryptofactory.NewOkem(okemName)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+	kem, err := cryptofactory.NewKem(kemName)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
 
 	details := getLengthDetails(okem, kem)
 
@@ -120,8 +126,14 @@ func TestGeneratePaddingTests(t *testing.T) {
 	for _, okemName := range cryptofactory.OkemNames() {
 		for _, kemName := range cryptofactory.KemNames() {
 			t.Run(kemName+"|"+okemName, func(t *testing.T) {
-				okem := cryptofactory.NewOkem(okemName)
-				kem := cryptofactory.NewKem(kemName)
+				okem, err := cryptofactory.NewOkem(okemName)
+				if err != nil {
+					t.Fatalf("%s", err)
+				}
+				kem, err := cryptofactory.NewKem(kemName)
+				if err != nil {
+					t.Fatalf("%s", err)
+				}
 				lengthDetails := getLengthDetails(okem, kem)
 
 				values1 := generatePaddingTests(lengthDetails.clientMinPadLength, lengthDetails.clientMaxPadLength)
@@ -217,8 +229,14 @@ func TestHandshakeDrivelcrypto(t *testing.T) {
 }
 
 func testHandshakeDrivelcryptoClient(t *testing.T, okemName string, kemName string) {
-	okem := cryptofactory.NewOkem(okemName)
-	kem := cryptofactory.NewKem(kemName)
+	okem, err := cryptofactory.NewOkem(okemName)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+	kem, err := cryptofactory.NewKem(kemName)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
 
 	lengthDetails := getLengthDetails(okem, kem)
 
@@ -339,8 +357,14 @@ func testHandshakeDrivelcryptoClient(t *testing.T, okemName string, kemName stri
 }
 
 func testHandshakeDrivelcryptoServer(t *testing.T, okemName string, kemName string) {
-	okem := cryptofactory.NewOkem(okemName)
-	kem := cryptofactory.NewKem(kemName)
+	okem, err := cryptofactory.NewOkem(okemName)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+	kem, err := cryptofactory.NewKem(kemName)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
 	lengthDetails := getLengthDetails(okem, kem)
 
 	// Generate the server node id and id keypair, and ephemeral session keys.
@@ -471,8 +495,14 @@ func BenchmarkDrivelHandshake(b *testing.B) {
 }
 
 func benchmarkDrivelHandshake(b *testing.B, okemName string, kemName string) {
-	okem := cryptofactory.NewOkem(okemName)
-	kem := cryptofactory.NewKem(kemName)
+	okem, err := cryptofactory.NewOkem(okemName)
+	if err != nil {
+		b.Fatalf("%s", err)
+	}
+	kem, err := cryptofactory.NewKem(kemName)
+	if err != nil {
+		b.Fatalf("%s", err)
+	}
 
 	// Generate the "long lasting" identity key and NodeId.
 	idKeypair := okem.KeyGen()

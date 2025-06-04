@@ -29,6 +29,7 @@
 package cryptofactory // import "gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory"
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -58,9 +59,12 @@ func KemNames() []string {
 	res := make([]string, 0, len(allKemNames))
 
 	// disabled Classic McEliece KEM due to large impact on memory usage and unlikeliness to be used, OKEM is still available
+	// disabled FrodoKEM SHAKE variants to reduce number of tests, AES is still available
 	// copy all other KEMs into res
 	for _, kemName := range allKemNames {
 		if strings.Contains(kemName, "Classic-McEliece") {
+			continue
+		} else if strings.Contains(kemName, "FrodoKEM") && strings.Contains(kemName, "SHAKE") {
 			continue
 		} else {
 			res = append(res, kemName)
@@ -111,13 +115,13 @@ Legal values for names are:
   - Any valid name for a KEM enabled in the open-quantum-safe library.
     These can be viewed via KemNames().
 */
-func NewKem(kemName string) kems.KeyEncapsulationMechanism {
+func NewKem(kemName string) (kems.KeyEncapsulationMechanism, error) {
 	if kemName == "x25519" {
-		return &x25519ell2.X25519KEM{}
+		return &x25519ell2.X25519KEM{}, nil
 	} else if slices.Contains(oqs_wrapper.OqsEnabledKEMs, kemName) && slices.Contains(KemNames(), kemName) {
-		return oqs_wrapper.NewOqsWrapper(kemName)
+		return oqs_wrapper.NewOqsWrapper(kemName), nil
 	} else {
-		panic("cryptofactory: no KEM found for name: " + kemName)
+		return nil, fmt.Errorf("cryptofactory: no KEM found for name: %s", kemName)
 	}
 }
 
@@ -131,13 +135,15 @@ Possible names for future additions:
   - "OEINC[<okem1>,<okem2>]" if "<okem1>" and "<okem2>" are both
     valid names for [okems.NewOkem]
 */
-func NewOkem(okemName string) okems.ObfuscatedKem {
+func NewOkem(okemName string) (okems.ObfuscatedKem, error) {
+	var err error
+
 	if strings.HasPrefix(okemName, encoderPrefix) {
 		// "FEO-<kem_name>" if "<kem_name>" is a valid name for [kems.NewKem]
 		// Construct KEM
 		kemName := okemName[len(encoderPrefix):]
 		if !slices.Contains(allEncodedKems, kemName) {
-			panic("cryptofactory: no encoding mapped for KEM " + kemName)
+			return nil, fmt.Errorf("cryptofactory: no encoding mapped for KEM %s", kemName)
 		}
 		var kem kems.KeyEncapsulationMechanism
 		// Select encoder
@@ -145,7 +151,10 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 		switch kemName {
 		case "x25519":
 			encoder = &x25519ell2.Elligator2Encoder{}
-			kem = NewKem(kemName)
+			kem, err = NewKem(kemName)
+			if err != nil {
+				panic(fmt.Sprintf("Unexpected invalid KEM name: %v", err))
+			}
 		case "Classic-McEliece-348864",
 			"Classic-McEliece-460896",
 			"Classic-McEliece-6688128",
@@ -157,13 +166,22 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 			kem = oqs_wrapper.NewOqsWrapper(kemName)
 		case "ML-KEM-512", "ML-KEM-768", "ML-KEM-1024":
 			encoder = &encoding_kemeleon.KemeleonEncoder{}
-			kem = NewKem(kemName)
+			kem, err = NewKem(kemName)
+			if err != nil {
+				panic(fmt.Sprintf("Unexpected invalid KEM name: %v", err))
+			}
 		case "HQC-128", "HQC-192", "HQC-256":
 			encoder = &encoding_hqc.HqcEncoder{}
-			kem = NewKem(kemName)
+			kem, err = NewKem(kemName)
+			if err != nil {
+				panic(fmt.Sprintf("Unexpected invalid KEM name: %v", err))
+			}
 		case "FrodoKEM-640-AES", "FrodoKEM-976-AES", "FrodoKEM-1344-AES":
 			encoder = nil
-			kem = NewKem(kemName)
+			kem, err = NewKem(kemName)
+			if err != nil {
+				panic(fmt.Sprintf("Unexpected invalid KEM name: %v", err))
+			}
 		default:
 			panic("cryptofactory: contradictory 'allEncodedKems' and switch-case " + kemName)
 		}
@@ -171,7 +189,7 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 		if encoder != nil {
 			encoder.Init(kem)
 		}
-		return filter_encode.NewFilterEncodeObfuscatorOKEM(kem, encoder)
+		return filter_encode.NewFilterEncodeObfuscatorOKEM(kem, encoder), nil
 	} else if strings.HasPrefix(okemName, "OEINC[") && strings.HasSuffix(okemName, "]") {
 		panic("cryptofactory: OEINC not yet implemented")
 
@@ -190,6 +208,6 @@ func NewOkem(okemName string) okems.ObfuscatedKem {
 		// // Combine
 		// return NewOEINC(okem1, okem2) --> new struct analogous to encaps_encode.go
 	} else {
-		panic("cryptofactory: no OKEM construction found for name: " + okemName)
+		return nil, fmt.Errorf("cryptofactory: no OKEM construction found for name: %s", okemName)
 	}
 }

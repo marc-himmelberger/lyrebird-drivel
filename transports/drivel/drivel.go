@@ -47,7 +47,6 @@ import (
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/log"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/probdist"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/common/replayfilter"
-	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/cryptofactory"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/kems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/internal/okems"
 	"gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/transports/base"
@@ -58,6 +57,8 @@ import (
 const (
 	transportName = "drivel"
 
+	kemNameArg    = "kem-name"
+	okemNameArg   = "okem-name"
 	nodeIDArg     = "node-id"
 	publicKeyArg  = "public-key"
 	privateKeyArg = "private-key"
@@ -74,10 +75,6 @@ const (
 
 	maxIATDelay   = 100
 	maxCloseDelay = 60
-
-	// The proper way would be to add a TOR_PT_CLIENT_TRANSPORT_OPTIONS
-	kemName  = "ML-KEM-512"
-	okemName = "FEO-Classic-McEliece-348864"
 )
 
 const (
@@ -89,12 +86,6 @@ const (
 // biasedDist controls if the probability table will be ScrambleSuit style or
 // uniformly distributed.
 var biasedDist bool
-
-// kem controls what KEM is used to instantiate Drivel.
-var kemScheme kems.KeyEncapsulationMechanism
-
-// okem controls what OKEM is used to instantiate Drivel.
-var okemScheme okems.ObfuscatedKem
 
 type drivelClientArgs struct {
 	okem okems.ObfuscatedKem
@@ -121,7 +112,7 @@ func (t *Transport) ClientFactory(stateDir string) (base.ClientFactory, error) {
 
 // ServerFactory returns a new drivelServerFactory instance.
 func (t *Transport) ServerFactory(stateDir string, args *pt.Args) (base.ServerFactory, error) {
-	st, err := serverStateFromArgs(stateDir, args, okemScheme)
+	st, err := serverStateFromArgs(stateDir, args)
 	if err != nil {
 		return nil, err
 	}
@@ -138,6 +129,8 @@ func (t *Transport) ServerFactory(stateDir string, args *pt.Args) (base.ServerFa
 
 	// Store the arguments that should appear in our descriptor for the clients.
 	ptArgs := pt.Args{}
+	ptArgs.Add(kemNameArg, st.kem.Name())
+	ptArgs.Add(okemNameArg, st.okem.Name())
 	ptArgs.Add(nodeIDArg, st.nodeID.Hex())
 	ptArgs.Add(iatArg, strconv.Itoa(st.iatMode))
 
@@ -154,7 +147,7 @@ func (t *Transport) ServerFactory(stateDir string, args *pt.Args) (base.ServerFa
 	}
 	rng := rand.New(drbg)
 
-	sf := &drivelServerFactory{okemScheme, kemScheme, t, &ptArgs, st.nodeID, st.identityKey, st.drbgSeed, iatSeed, st.iatMode, filter, rng.Intn(maxCloseDelay)}
+	sf := &drivelServerFactory{st.okem, st.kem, t, &ptArgs, st.nodeID, st.identityKey, st.drbgSeed, iatSeed, st.iatMode, filter, rng.Intn(maxCloseDelay)}
 	return sf, nil
 }
 
@@ -188,11 +181,11 @@ func (cf *drivelClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 	// The public keys must be deposited in the clients stateDir.
 	// The file is identified by the first bytes of nodeID in hex.
 	// The file contains the public key in JSON format, see [statefile.go]
-	publicKeyStr, err := publicKeyStrFromFile(cf.stateDir, nodeID)
+	kem, okem, publicKeyStr, err := bridgeInfoFromFile(cf.stateDir, nodeID)
 	if err != nil {
 		return nil, err
 	}
-	publicKey, err = okems.PublicKeyFromHex(okemScheme, publicKeyStr)
+	publicKey, err = okems.PublicKeyFromHex(okem, publicKeyStr)
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +200,7 @@ func (cf *drivelClientFactory) ParseArgs(args *pt.Args) (interface{}, error) {
 		return nil, fmt.Errorf("invalid iat-mode '%d'", iatMode)
 	}
 
-	return &drivelClientArgs{okemScheme, kemScheme, nodeID, publicKey, iatMode}, nil
+	return &drivelClientArgs{okem, kem, nodeID, publicKey, iatMode}, nil
 }
 
 // Should be used as a Dial function to initiate a Pluggable Transport session.
@@ -652,9 +645,6 @@ func (conn *drivelConn) padBurst(burst *bytes.Buffer, toPadTo int) (err error) {
 
 func init() {
 	flag.BoolVar(&biasedDist, biasCmdArg, false, "Enable drivel using ScrambleSuit style table generation")
-
-	kemScheme = cryptofactory.NewKem(kemName)
-	okemScheme = cryptofactory.NewOkem(okemName)
 }
 
 var _ base.ClientFactory = (*drivelClientFactory)(nil)
