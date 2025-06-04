@@ -94,12 +94,12 @@ func testDrivelcrypto(t *testing.T) {
 		t.Fatal("Failed to combine using PRF: wrong output length")
 	}
 
-	// XorEncryptDecrypt
+	// SymmetricEncryptDecrypt
 	var msg = make([]byte, 32)
 
 	csrand.Bytes(msg)
 
-	encMsg := XorEncryptDecrypt(pseudorandomKey, msg)
+	encMsg := SymmetricEncryptDecrypt(pseudorandomKey, msg)
 	if encMsg == nil {
 		t.Fatal("Failed to do symmetric encryption: output is nil")
 	}
@@ -107,7 +107,7 @@ func testDrivelcrypto(t *testing.T) {
 		t.Fatal("Failed to do symmetric encryption: wrong output length")
 	}
 
-	msg2 := XorEncryptDecrypt(pseudorandomKey, encMsg)
+	msg2 := SymmetricEncryptDecrypt(pseudorandomKey, encMsg)
 	if encMsg == nil {
 		t.Fatal("Failed to do symmetric decryption: output is nil")
 	}
@@ -223,14 +223,14 @@ func BenchmarkPrfCombine(b *testing.B) {
 	}
 }
 
-func BenchmarkXorEncryptDecrypt(b *testing.B) {
+func BenchmarkSymmetricEncryptDecrypt(b *testing.B) {
 	input1 := make([]byte, 32)
 	input2 := make([]byte, 512)
 	csrand.Bytes(input1)
 	csrand.Bytes(input2)
 
 	for b.Loop() {
-		XorEncryptDecrypt(input1, input2)
+		SymmetricEncryptDecrypt(input1, input2)
 	}
 }
 

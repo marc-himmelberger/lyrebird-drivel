@@ -65,8 +65,8 @@ const (
 	// It should be used when a constant-size KDF output is desired.
 	KdfOutLength = sha256.Size
 
-	// XorKeySize is the length of keys required for XorEncryptDecrypt
-	XorKeySize = 32
+	// SymmetricKeySize is the length of keys required for SymmetricEncryptDecrypt
+	SymmetricKeySize = 32
 
 	// MaxOkmLen is the maximum value allowed for okmLen in KdfExpand
 	MaxOkmLen = 255 * 32
@@ -262,15 +262,15 @@ func PrfCombine(input1 []byte, input2 []byte) []byte {
 	return prf.Sum(nil)
 }
 
-// Performs AES-256-CTR encryption/decryption using a key of [XorKeySize] bytes.
+// Performs AES-256-CTR encryption/decryption using a key of [SymmetricKeySize] bytes.
 // This performs symmetric encryption/decryption and may hide structure within a message.
 // However, this function MUST NOT be called twice with the same key (even if messages differ).
-func XorEncryptDecrypt(key []byte, message []byte) []byte {
-	if XorKeySize != 32 {
-		panic(fmt.Sprintf("BUG: XorKeySize is not 32B but %dB.", XorKeySize))
+func SymmetricEncryptDecrypt(key []byte, message []byte) []byte {
+	if SymmetricKeySize != 32 {
+		panic(fmt.Sprintf("BUG: SymmetricKeySize is not 32B but %dB.", SymmetricKeySize))
 	}
 	if len(key) != 32 {
-		panic(fmt.Sprintf("XorEncryptDecrypt: required 32B key, not %d", len(key)))
+		panic(fmt.Sprintf("SymmetricEncryptDecrypt: required 32B key, not %d", len(key)))
 	}
 
 	// 32B key selects AES-256 here

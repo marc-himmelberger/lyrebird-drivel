@@ -226,12 +226,12 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 	hs.ephemeralSecret = drivelcrypto.PrfCombine(hs.nodeID.Bytes()[:], okemSharedSecret.Bytes())
 
 	// Derive encryption keys from ephemeral secret using KDF and different info values
-	hs.encryptionKey1 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc1, drivelcrypto.XorKeySize)
-	hs.encryptionKey2 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc2, drivelcrypto.XorKeySize)
+	hs.encryptionKey1 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc1, drivelcrypto.SymmetricKeySize)
+	hs.encryptionKey2 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc2, drivelcrypto.SymmetricKeySize)
 
 	// Encrypt own KEM public key
 	clientKemPublicKey := hs.keypair.Public()
-	encClientKemPublicKey = drivelcrypto.XorEncryptDecrypt(hs.encryptionKey1, clientKemPublicKey.Bytes())
+	encClientKemPublicKey = drivelcrypto.SymmetricEncryptDecrypt(hs.encryptionKey1, clientKemPublicKey.Bytes())
 
 	// buf will be used to construct the final message
 	buf := bytes.NewBuffer(make([]byte, 0, maxHandshakeLength))
@@ -310,7 +310,7 @@ func (hs *clientHandshake) parseServerHandshake(resp []byte) (int, []byte, error
 	}
 
 	// Decrypt KEM ciphertext
-	ctxtBytes := drivelcrypto.XorEncryptDecrypt(hs.encryptionKey2, hs.encClientKemCiphertext)
+	ctxtBytes := drivelcrypto.SymmetricEncryptDecrypt(hs.encryptionKey2, hs.encClientKemCiphertext)
 	cd, err := cryptodata.New(ctxtBytes, ectLength)
 	if err != nil {
 		return 0, nil, err
@@ -424,8 +424,8 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 		hs.ephemeralSecret = drivelcrypto.PrfCombine(hs.nodeID.Bytes()[:], shared.Bytes())
 
 		// Derive encryption keys from ephemeral secret using KDF and different info values
-		hs.encryptionKey1 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc1, drivelcrypto.XorKeySize)
-		hs.encryptionKey2 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc2, drivelcrypto.XorKeySize)
+		hs.encryptionKey1 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc1, drivelcrypto.SymmetricKeySize)
+		hs.encryptionKey2 = drivelcrypto.KdfExpand(hs.ephemeralSecret, mExpandEnc2, drivelcrypto.SymmetricKeySize)
 
 		// Derive the mark.
 		hs.clientMark = drivelcrypto.MessageMark(hs.ephemeralSecret, true, resp[0:epkLength+csLength])
@@ -473,7 +473,7 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 	}
 
 	// Decrypt client KEM public key
-	publicBytes := drivelcrypto.XorEncryptDecrypt(hs.encryptionKey1, hs.encClientKemPublicKey)
+	publicBytes := drivelcrypto.SymmetricEncryptDecrypt(hs.encryptionKey1, hs.encClientKemPublicKey)
 	cd, err := cryptodata.New(publicBytes, epkLength)
 	if err != nil {
 		return nil, err
@@ -490,7 +490,7 @@ func (hs *serverHandshake) parseClientHandshake(filter *replayfilter.ReplayFilte
 	}
 
 	// Encrypt KEM ciphertext
-	hs.encClientKemCiphertext = drivelcrypto.XorEncryptDecrypt(hs.encryptionKey2, kemCiphertext.Bytes())
+	hs.encClientKemCiphertext = drivelcrypto.SymmetricEncryptDecrypt(hs.encryptionKey2, kemCiphertext.Bytes())
 
 	var seed *drivelcrypto.KeySeed
 	seed, hs.serverAuth = drivelcrypto.DrivelCommon(hs.ephemeralSecret, hs.kemSharedSecret, hs.serverIdentity.Public(),
