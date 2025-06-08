@@ -21,7 +21,7 @@ clean:
 
 liboqs:
 	git clone --depth=1 https://github.com/open-quantum-safe/liboqs
-	cmake -S liboqs -B liboqs/build -DCMAKE_INSTALL_PREFIX="$(ROOT)/liboqs" -DOQS_USE_OPENSSL=OFF
+	cmake -S liboqs -B liboqs/build -DCMAKE_INSTALL_PREFIX="$(ROOT)/liboqs" -DOQS_USE_OPENSSL=OFF -DOQS_ENABLE_KEM_HQC=ON
 	cmake --build liboqs/build --parallel 8
 	cmake --build liboqs/build --target install
 

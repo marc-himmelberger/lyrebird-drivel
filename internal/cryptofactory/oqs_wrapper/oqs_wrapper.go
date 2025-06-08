@@ -40,9 +40,13 @@ import (
 var OqsEnabledKEMs []string
 
 func init() {
+	OqsEnabledKEMs = oqs.EnabledKEMs()
+}
+
+// Uses [common/log] to print informational messages describing the supported KEMs
+func LogKEMs() {
 	supportedKEMs := oqs.SupportedKEMs()
 	log.Infof("OQS - supported KEMs: %s", supportedKEMs)
-	OqsEnabledKEMs = oqs.EnabledKEMs()
 	log.Infof("OQS - enabled KEMs:   %s", OqsEnabledKEMs)
 }
 

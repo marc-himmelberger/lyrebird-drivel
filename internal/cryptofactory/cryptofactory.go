@@ -121,6 +121,8 @@ func NewKem(kemName string) (kems.KeyEncapsulationMechanism, error) {
 	} else if slices.Contains(oqs_wrapper.OqsEnabledKEMs, kemName) && slices.Contains(KemNames(), kemName) {
 		return oqs_wrapper.NewOqsWrapper(kemName), nil
 	} else {
+		oqs_wrapper.LogKEMs()
+
 		return nil, fmt.Errorf("cryptofactory: no KEM found for name: %s", kemName)
 	}
 }
