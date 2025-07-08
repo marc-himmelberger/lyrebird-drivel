@@ -256,8 +256,8 @@ func testHandshakeDrivelcryptoClient(t *testing.T, okemName string, kemName stri
 	)
 
 	// Test client handshake padding.
-	// Exhaustive padding check are too expensive
-	// TODO: remove this with fragmentation?
+	// Exhaustive padding checks are too expensive
+	// TODO: adapt padding tests after fragmentation is implemented
 	padMin := lengthDetails.clientMinPadLength
 	padMax := lengthDetails.clientMaxPadLength
 	t.Logf("Covering padding lengths from %d up to %d", padMin, padMax)
@@ -374,8 +374,8 @@ func testHandshakeDrivelcryptoServer(t *testing.T, okemName string, kemName stri
 	clientKeypair := kem.KeyGen()
 
 	// Test server handshake padding.
-	// Exhaustive padding check are too expensive
-	// TODO: remove this with fragmentation?
+	// Exhaustive padding checks are too expensive
+	// TODO: adapt padding tests after fragmentation is implemented
 	padMin := lengthDetails.serverMinPadLength
 	padMax := lengthDetails.serverMaxPadLength + inlineSeedFrameLength
 	t.Logf("Covering padding lengths from %d up to %d", padMin, padMax)

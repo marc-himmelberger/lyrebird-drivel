@@ -221,8 +221,7 @@ func MessageMAC(ephermalSecret []byte, isClient bool, msg []byte, epochHour int6
 	// a) info is required to be a contiguous byte slice
 	// b) info is input into the HMAC with every generated block
 	// Obfs4 used an HMAC directly avoiding copies via hmac.Write()
-	// XXX: Could we do better by doing HMAC directly?
-	// XXX: Can we even reuse an HMAC by saving it into the handshake struct (if key is reused)?
+	// TODO: This would provit from using shorter hashed inputs, similar to TLS context
 	infoBuf := make([]byte, 0, len(msg)+len(epochHourStr)+len(tag))
 	infoBuf = append(infoBuf, msg...)
 	infoBuf = append(infoBuf, []byte(epochHourStr)...)

@@ -254,9 +254,6 @@ func (hs *clientHandshake) generateHandshake() ([]byte, error) {
 	// Complete message with mac
 	buf.Write(clientMac)
 
-	// TODO calculate A_S
-	// TODO split into two messages (c_S | A_S) | makePacket(rest)
-
 	return buf.Bytes(), nil
 }
 
